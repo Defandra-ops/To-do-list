@@ -1,0 +1,14 @@
+{
+  "name": "todo-backend",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun --watch src/index.ts"
+  },
+  "dependencies": {
+    "@types/pg": "^8.11.0",
+    "pg": "^8.11.3",
+    "hono": "^4.0.0" 
+  }
+}

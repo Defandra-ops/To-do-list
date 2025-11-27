@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # Layanan Database PostgreSQL
+  db:
+    image: postgres:16-alpine
+    container_name: todo_db
+    restart: always
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: todolist
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+
+  # Layanan Backend Bun
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: todo_backend
+    restart: always
+    environment:
+      # DATABASE_URL menggunakan 'db' sebagai host karena ini nama service di Docker Compose
+      DATABASE_URL: postgres://user:password@db:5432/todolist
+    ports:
+      - "3000:3000"
+    depends_on:
+      - db # Pastikan DB berjalan sebelum backend
+    volumes:
+      - ./backend:/app 
+      - /app/node_modules 
+
+volumes:
+  postgres_data:
