@@ -25,13 +25,13 @@ const server = Bun.serve({
       }
 
       if (method === "POST" && url.pathname === "/todos") {
-        const body = await req.json();
-        const result = await pool.query(
-          "INSERT INTO todos (title) VALUES ($1) RETURNING *",
-          [body.title]
-        );
-        return Response.json(result.rows[0], { headers });
-      }
+      const body = await req.json();
+      const result = await pool.query(
+        "INSERT INTO todos (title) VALUES ($1) RETURNING *",
+        [body.title]
+      );
+      return Response.json(result.rows[0], { headers });
+    }
 
       if (method === "PUT" && url.pathname.startsWith("/todos/")) {
         const id = url.pathname.split("/")[2];
@@ -57,13 +57,13 @@ const server = Bun.serve({
   },
 });
 
-// Init Table
+
 pool.query(`
   CREATE TABLE IF NOT EXISTS todos (
     id SERIAL PRIMARY KEY,
     title TEXT NOT NULL,
-    completed BOOLEAN DEFAULT false
+    completed BOOLEAN DEFAULT false,
+    due_date TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 `).then(() => console.log("Database table checked/created"));
-
-console.log(`Server running on http://localhost:${server.port}`);
