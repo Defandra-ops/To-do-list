@@ -24,7 +24,7 @@ const server = Bun.serve({
         return Response.json(result.rows, { headers });
       }
 
-      if (method === "POST" && url.pathname === "/todos") {
+    if (method === "POST" && url.pathname === "/todos") {
       const body = await req.json();
       const result = await pool.query(
         "INSERT INTO todos (title) VALUES ($1) RETURNING *",
