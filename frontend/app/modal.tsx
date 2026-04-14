@@ -1,18 +1,28 @@
 import { StatusBar } from 'expo-status-bar';
-import { Platform, StyleSheet } from 'react-native';
-
-import EditScreenInfo from '@/components/EditScreenInfo';
-import { Text, View } from '@/components/Themed';
+import { StyleSheet, Text, View } from 'react-native';
 
 export default function ModalScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Modal</Text>
-      <View style={styles.separator} lightColor="#eee" darkColor="rgba(255,255,255,0.1)" />
-      <EditScreenInfo path="app/modal.tsx" />
+      <View style={styles.card}>
+        <Text style={styles.title}>Playful Workflow Tips</Text>
 
-      {/* Use a light status bar on iOS to account for the black space above the modal */}
-      <StatusBar style={Platform.OS === 'ios' ? 'light' : 'auto'} />
+        <View style={styles.tipRow}>
+          <Text style={styles.tipBullet}>1.</Text>
+          <Text style={styles.tipText}>Create one big task with a clear outcome.</Text>
+        </View>
+
+        <View style={styles.tipRow}>
+          <Text style={styles.tipBullet}>2.</Text>
+          <Text style={styles.tipText}>Break it into tiny subtasks you can finish in 5-15 minutes.</Text>
+        </View>
+
+        <View style={styles.tipRow}>
+          <Text style={styles.tipBullet}>3.</Text>
+          <Text style={styles.tipText}>Use the Overview tab to rebalance when too many tasks are waiting.</Text>
+        </View>
+      </View>
+      <StatusBar style="dark" />
     </View>
   );
 }
@@ -20,16 +30,36 @@ export default function ModalScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    alignItems: 'center',
     justifyContent: 'center',
+    padding: 18,
+    backgroundColor: '#fff6ed',
+  },
+  card: {
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: '#ffd7b1',
+    backgroundColor: '#fffdf9',
+    padding: 16,
   },
   title: {
-    fontSize: 20,
-    fontWeight: 'bold',
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#3c2a18',
+    marginBottom: 10,
   },
-  separator: {
-    marginVertical: 30,
-    height: 1,
-    width: '80%',
+  tipRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  tipBullet: {
+    fontWeight: '800',
+    color: '#9a6430',
+  },
+  tipText: {
+    flex: 1,
+    color: '#6b4f37',
+    lineHeight: 21,
+    fontWeight: '600',
   },
 });

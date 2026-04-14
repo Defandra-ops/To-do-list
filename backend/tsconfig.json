@@ -5,9 +5,9 @@
     "moduleResolution": "Node",
     "isolatedModules": true,
     "strict": true,
-    "ignoreDeprecations": "6.0",
     "baseUrl": ".",
     "types": ["bun", "node"]
+    
   },
   "include": ["src"]
 }

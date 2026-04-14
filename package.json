@@ -6,7 +6,7 @@
     "typescript": "~5.9.2"
   },
   "dependencies": {
-    "expo": "^55.0.12",
+    "expo": "~55.0.14",
     "react-dom": "19.2.0"
   }
 }
