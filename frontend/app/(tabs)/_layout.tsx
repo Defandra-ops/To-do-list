@@ -23,8 +23,8 @@ export default function TabLayout() {
       screenOptions={{
         tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
         tabBarStyle: {
-          backgroundColor: '#eef4ff',
-          borderTopColor: '#adfffc',
+          backgroundColor: '#f2f2f2',
+          borderTopColor: '#d9d9d9',
           height: 66,
           paddingBottom: 8,
           paddingTop: 6,
@@ -34,7 +34,7 @@ export default function TabLayout() {
           fontWeight: '700',
         },
         headerStyle: {
-          backgroundColor: '#fff0e0',
+          backgroundColor: '#f7f7f7',
         },
         headerTitleStyle: {
           fontWeight: '800',
@@ -64,10 +64,17 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="overview"
         options={{
           title: 'Overview',
           tabBarIcon: ({ color }) => <TabBarIcon name="pie-chart" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="two"
+        options={{
+          title: 'Users',
+          tabBarIcon: ({ color }) => <TabBarIcon name="user" color={color} />,
         }}
       />
     </Tabs>
