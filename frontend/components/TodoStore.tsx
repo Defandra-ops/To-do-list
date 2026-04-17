@@ -1,4 +1,5 @@
-import React, { createContext, useContext, useMemo, useState } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { Platform } from 'react-native';
 
 export type Subtask = {
   id: string;
@@ -39,18 +40,104 @@ type TodoStoreValue = {
   removeSubtask: (taskId: string, subtaskId: string) => void;
 };
 
+type PersistedAppState = {
+  users: UserAccount[];
+  activeUserId: string;
+  tasks: Task[];
+};
+
 const TodoStoreContext = createContext<TodoStoreValue | null>(null);
 
 const buildId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-const initialUsers: UserAccount[] = [{ id: buildId(), name: 'Default user' }];
+const defaultUser: UserAccount = { id: 'default-user', name: 'Default user' };
+const initialUsers: UserAccount[] = [defaultUser];
 
 const initialTasks: Task[] = [];
+
+const apiBaseUrl = Platform.select({
+  android: 'http://10.0.2.2:3000',
+  ios: 'http://localhost:3000',
+  default: 'http://localhost:3000',
+});
 
 export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<UserAccount[]>(initialUsers);
   const [activeUserId, setActiveUserId] = useState(initialUsers[0].id);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [isHydrated, setIsHydrated] = useState(false);
+
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    const loadState = async () => {
+      if (!apiBaseUrl) {
+        setIsHydrated(true);
+        return;
+      }
+
+      try {
+        const response = await fetch(`${apiBaseUrl}/state`);
+        if (!response.ok) {
+          setIsHydrated(true);
+          return;
+        }
+
+        const payload = (await response.json()) as Partial<PersistedAppState>;
+
+        const nextUsers = Array.isArray(payload.users) && payload.users.length > 0 ? payload.users : initialUsers;
+        const nextTasks = Array.isArray(payload.tasks) ? payload.tasks : initialTasks;
+        const nextActiveUserId =
+          typeof payload.activeUserId === 'string' && nextUsers.some((user) => user.id === payload.activeUserId)
+            ? payload.activeUserId
+            : nextUsers[0].id;
+
+        setUsers(nextUsers);
+        setTasks(nextTasks);
+        setActiveUserId(nextActiveUserId);
+      } catch (error) {
+        console.error('Failed to load app state:', error);
+      } finally {
+        setIsHydrated(true);
+      }
+    };
+
+    loadState();
+  }, []);
+
+  useEffect(() => {
+    if (!isHydrated || !apiBaseUrl) return;
+
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+    }
+
+    saveTimerRef.current = setTimeout(async () => {
+      const payload: PersistedAppState = {
+        users,
+        activeUserId,
+        tasks,
+      };
+
+      try {
+        await fetch(`${apiBaseUrl}/state`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(payload),
+        });
+      } catch (error) {
+        console.error('Failed to save app state:', error);
+      }
+    }, 400);
+
+    return () => {
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+      }
+    };
+  }, [activeUserId, isHydrated, tasks, users]);
 
   const includeUser = (list: string[], userId: string) => {
     if (list.includes(userId)) return list;

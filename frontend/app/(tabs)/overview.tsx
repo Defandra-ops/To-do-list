@@ -1,7 +1,7 @@
-import { Ionicons } from '@expo/vector-icons';
-import { useMemo } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { Animated, Easing, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import Svg, { Circle, G } from 'react-native-svg';
 
 import { Task, useTodoStore } from '@/components/TodoStore';
 
@@ -16,6 +16,28 @@ const getLocalIsoDate = () => {
 export default function OverviewRecordScreen() {
   const { tasks, users } = useTodoStore();
 
+  const progressAnim = useRef(new Animated.Value(0)).current;
+  const [displayRatio, setDisplayRatio] = useState(0);
+
+  useEffect(() => {
+    progressAnim.setValue(0);
+
+    const listener = progressAnim.addListener(({ value }) => {
+      setDisplayRatio(value);
+    });
+
+    Animated.timing(progressAnim, {
+      toValue: 1,
+      duration: 900,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+
+    return () => {
+      progressAnim.removeListener(listener);
+    };
+  }, [progressAnim, tasks]);
+
   const userById = useMemo(() => {
     return users.reduce<Record<string, string>>((acc, user) => {
       acc[user.id] = user.name;
@@ -29,6 +51,38 @@ export default function OverviewRecordScreen() {
     const failed = tasks.filter((task) => !task.completed && Boolean(task.endDate) && task.endDate < today);
     return { completedTasks: completed, failedTasks: failed };
   }, [tasks]);
+
+  const ongoingTasks = useMemo(() => {
+    const failedIds = new Set(failedTasks.map((task) => task.id));
+    return tasks.filter((task) => !task.completed && !failedIds.has(task.id));
+  }, [failedTasks, tasks]);
+
+  const totalTasks = tasks.length;
+  const safeTotal = Math.max(totalTasks, 1);
+  const doneRatio = completedTasks.length / safeTotal;
+  const failedRatio = failedTasks.length / safeTotal;
+  const ongoingRatio = ongoingTasks.length / safeTotal;
+
+  const ringRadius = 68;
+  const ringCircumference = 2 * Math.PI * ringRadius;
+  const segmentGap = 8;
+
+  const segmentRatios = [doneRatio, failedRatio, ongoingRatio];
+  const nonZeroSegments = segmentRatios.filter((ratio) => ratio > 0).length;
+  const totalGapLength = nonZeroSegments > 0 ? segmentGap * nonZeroSegments : 0;
+  const drawableLength = Math.max(ringCircumference - totalGapLength, 0);
+
+  const doneLength = drawableLength * doneRatio;
+  const failedLength = drawableLength * failedRatio;
+  const ongoingLength = drawableLength * ongoingRatio;
+
+  const doneOffset = 0;
+  const failedOffset = -(doneLength + (doneLength > 0 ? segmentGap : 0));
+  const ongoingOffset = -(doneLength + failedLength + (doneLength > 0 ? segmentGap : 0) + (failedLength > 0 ? segmentGap : 0));
+
+  const displayDone = Math.round(completedTasks.length * displayRatio);
+  const displayFailed = Math.round(failedTasks.length * displayRatio);
+  const displayOngoing = Math.round(ongoingTasks.length * displayRatio);
 
   const getUserNames = (ids: string[]) => {
     const names = ids.map((id) => userById[id]).filter((name): name is string => Boolean(name));
@@ -66,18 +120,95 @@ export default function OverviewRecordScreen() {
         <Text style={styles.title}>Overview Records</Text>
         <Text style={styles.subtitle}>Track everything that is done and failed by deadline.</Text>
 
-        <View style={styles.statsRow}>
-          <View style={[styles.statCard, styles.statDone]}>
-            <Ionicons name="checkmark-circle" size={18} color="#0f7a44" />
-            <Text style={styles.statNumber}>{completedTasks.length}</Text>
-            <Text style={styles.statLabel}>Done</Text>
+        <Animated.View
+          style={[
+            styles.diagramCard,
+            {
+              opacity: progressAnim,
+              transform: [
+                {
+                  scale: progressAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.92, 1],
+                  }),
+                },
+              ],
+            },
+          ]}>
+          <View style={styles.diagramWrap}>
+            <Svg width={200} height={200}>
+              <G rotation={-90} origin="100, 100">
+                <Circle
+                  cx={100}
+                  cy={100}
+                  r={ringRadius}
+                  stroke="rgba(15, 79, 168, 0.14)"
+                  strokeWidth={20}
+                  fill="none"
+                />
+                {doneLength > 0 ? (
+                  <Circle
+                    cx={100}
+                    cy={100}
+                    r={ringRadius}
+                    stroke="#10b981"
+                    strokeWidth={20}
+                    strokeLinecap="round"
+                    fill="none"
+                    strokeDasharray={`${doneLength * displayRatio} ${ringCircumference}`}
+                    strokeDashoffset={doneOffset}
+                  />
+                ) : null}
+                {failedLength > 0 ? (
+                  <Circle
+                    cx={100}
+                    cy={100}
+                    r={ringRadius}
+                    stroke="#ef4444"
+                    strokeWidth={20}
+                    strokeLinecap="round"
+                    fill="none"
+                    strokeDasharray={`${failedLength * displayRatio} ${ringCircumference}`}
+                    strokeDashoffset={failedOffset}
+                  />
+                ) : null}
+                {ongoingLength > 0 ? (
+                  <Circle
+                    cx={100}
+                    cy={100}
+                    r={ringRadius}
+                    stroke="#3b82f6"
+                    strokeWidth={20}
+                    strokeLinecap="round"
+                    fill="none"
+                    strokeDasharray={`${ongoingLength * displayRatio} ${ringCircumference}`}
+                    strokeDashoffset={ongoingOffset}
+                  />
+                ) : null}
+              </G>
+            </Svg>
+
+            <View style={styles.centerLabel}>
+              <Text style={styles.centerCount}>{totalTasks}</Text>
+              <Text style={styles.centerText}>Total Tasks</Text>
+            </View>
           </View>
-          <View style={[styles.statCard, styles.statFailed]}>
-            <Ionicons name="alert-circle" size={18} color="#b42318" />
-            <Text style={styles.statNumber}>{failedTasks.length}</Text>
-            <Text style={styles.statLabel}>Failed</Text>
+
+          <View style={styles.legendRow}>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#10b981' }]} />
+              <Text style={styles.legendText}>Done {displayDone}</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#ef4444' }]} />
+              <Text style={styles.legendText}>Failed {displayFailed}</Text>
+            </View>
+            <View style={styles.legendItem}>
+              <View style={[styles.legendDot, { backgroundColor: '#3b82f6' }]} />
+              <Text style={styles.legendText}>Ongoing {displayOngoing}</Text>
+            </View>
           </View>
-        </View>
+        </Animated.View>
 
         <View style={styles.sectionWrap}>
           <Text style={styles.sectionTitle}>Done Tasks</Text>
@@ -139,36 +270,53 @@ const styles = StyleSheet.create({
     color: '#3e5f88',
     fontSize: 14,
   },
-  statsRow: {
+  diagramCard: {
     marginTop: 14,
-    flexDirection: 'row',
-    gap: 10,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 14,
+    borderRadius: 18,
+    backgroundColor: '#fcfeff',
     borderWidth: 1,
-    paddingVertical: 10,
+    borderColor: '#cbdef3',
+    padding: 12,
+  },
+  diagramWrap: {
     alignItems: 'center',
-    gap: 2,
+    justifyContent: 'center',
   },
-  statDone: {
-    backgroundColor: 'rgba(16, 185, 129, 0.16)',
-    borderColor: 'rgba(16, 185, 129, 0.35)',
+  centerLabel: {
+    position: 'absolute',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  statFailed: {
-    backgroundColor: 'rgba(239, 68, 68, 0.16)',
-    borderColor: 'rgba(239, 68, 68, 0.35)',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontWeight: '800',
+  centerCount: {
+    fontSize: 30,
+    fontWeight: '900',
     color: '#143f7d',
   },
-  statLabel: {
+  centerText: {
     fontSize: 12,
+    color: '#4a678d',
     fontWeight: '700',
-    color: '#38557a',
+  },
+  legendRow: {
+    marginTop: 8,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 18,
+  },
+  legendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  legendDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  legendText: {
+    color: '#234568',
+    fontWeight: '700',
+    fontSize: 12,
   },
   sectionWrap: {
     marginTop: 16,
