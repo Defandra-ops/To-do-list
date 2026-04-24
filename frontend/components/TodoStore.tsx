@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 
 export type Subtask = {
@@ -54,12 +55,16 @@ const defaultUser: UserAccount = { id: 'default-user', name: 'Default user' };
 const initialUsers: UserAccount[] = [defaultUser];
 
 const initialTasks: Task[] = [];
+const STORAGE_KEY = 'todo-app-state-v1';
+const SYNC_INTERVAL_MS = 2500;
 
-const apiBaseUrl = Platform.select({
-  android: 'http://10.0.2.2:3000',
-  ios: 'http://localhost:3000',
-  default: 'http://localhost:3000',
-});
+const apiBaseUrl =
+  process.env.EXPO_PUBLIC_API_URL ??
+  Platform.select({
+    android: 'http://10.0.2.2:3000',
+    ios: 'http://localhost:3000',
+    default: 'http://localhost:3000',
+  });
 
 export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<UserAccount[]>(initialUsers);
@@ -68,37 +73,65 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
   const [isHydrated, setIsHydrated] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const localSnapshotRef = useRef('');
+  const suppressNextRemoteSaveRef = useRef(false);
+
+  const normalizeState = (payload: Partial<PersistedAppState>): PersistedAppState => {
+    const nextUsers = Array.isArray(payload.users) && payload.users.length > 0 ? payload.users : initialUsers;
+    const nextTasks = Array.isArray(payload.tasks) ? payload.tasks : initialTasks;
+    const nextActiveUserId =
+      typeof payload.activeUserId === 'string' && nextUsers.some((user) => user.id === payload.activeUserId)
+        ? payload.activeUserId
+        : nextUsers[0].id;
+
+    return {
+      users: nextUsers,
+      tasks: nextTasks,
+      activeUserId: nextActiveUserId,
+    };
+  };
+
+  const applyState = (nextState: PersistedAppState, suppressRemoteSave = false) => {
+    if (suppressRemoteSave) {
+      suppressNextRemoteSaveRef.current = true;
+    }
+
+    setUsers(nextState.users);
+    setTasks(nextState.tasks);
+    setActiveUserId(nextState.activeUserId);
+    localSnapshotRef.current = JSON.stringify(nextState);
+  };
 
   useEffect(() => {
     const loadState = async () => {
-      if (!apiBaseUrl) {
+      try {
+        const savedState = await AsyncStorage.getItem(STORAGE_KEY);
+        if (savedState) {
+          const localPayload = JSON.parse(savedState) as Partial<PersistedAppState>;
+          applyState(normalizeState(localPayload));
+        }
+      } catch (error) {
+        console.error('Failed to load local app state:', error);
+      } finally {
         setIsHydrated(true);
-        return;
       }
+
+      if (!apiBaseUrl) return;
 
       try {
         const response = await fetch(`${apiBaseUrl}/state`);
-        if (!response.ok) {
-          setIsHydrated(true);
-          return;
+        if (!response.ok) return;
+
+        const serverPayload = (await response.json()) as Partial<PersistedAppState>;
+        const normalized = normalizeState(serverPayload);
+        const serverSnapshot = JSON.stringify(normalized);
+
+        if (serverSnapshot !== localSnapshotRef.current) {
+          applyState(normalized, true);
+          await AsyncStorage.setItem(STORAGE_KEY, serverSnapshot);
         }
-
-        const payload = (await response.json()) as Partial<PersistedAppState>;
-
-        const nextUsers = Array.isArray(payload.users) && payload.users.length > 0 ? payload.users : initialUsers;
-        const nextTasks = Array.isArray(payload.tasks) ? payload.tasks : initialTasks;
-        const nextActiveUserId =
-          typeof payload.activeUserId === 'string' && nextUsers.some((user) => user.id === payload.activeUserId)
-            ? payload.activeUserId
-            : nextUsers[0].id;
-
-        setUsers(nextUsers);
-        setTasks(nextTasks);
-        setActiveUserId(nextActiveUserId);
       } catch (error) {
-        console.error('Failed to load app state:', error);
-      } finally {
-        setIsHydrated(true);
+        console.error('Failed to load server app state:', error);
       }
     };
 
@@ -106,7 +139,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!isHydrated || !apiBaseUrl) return;
+    if (!isHydrated) return;
 
     if (saveTimerRef.current) {
       clearTimeout(saveTimerRef.current);
@@ -118,6 +151,21 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         activeUserId,
         tasks,
       };
+      const snapshot = JSON.stringify(payload);
+      localSnapshotRef.current = snapshot;
+
+      try {
+        await AsyncStorage.setItem(STORAGE_KEY, snapshot);
+      } catch (error) {
+        console.error('Failed to save local app state:', error);
+      }
+
+      if (!apiBaseUrl) return;
+
+      if (suppressNextRemoteSaveRef.current) {
+        suppressNextRemoteSaveRef.current = false;
+        return;
+      }
 
       try {
         await fetch(`${apiBaseUrl}/state`, {
@@ -125,12 +173,12 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify(payload),
+          body: snapshot,
         });
       } catch (error) {
-        console.error('Failed to save app state:', error);
+        console.error('Failed to save server app state:', error);
       }
-    }, 400);
+    }, 450);
 
     return () => {
       if (saveTimerRef.current) {
@@ -138,6 +186,30 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
       }
     };
   }, [activeUserId, isHydrated, tasks, users]);
+
+  useEffect(() => {
+    if (!isHydrated || !apiBaseUrl) return;
+
+    const timer = setInterval(async () => {
+      try {
+        const response = await fetch(`${apiBaseUrl}/state`);
+        if (!response.ok) return;
+
+        const serverPayload = (await response.json()) as Partial<PersistedAppState>;
+        const normalized = normalizeState(serverPayload);
+        const serverSnapshot = JSON.stringify(normalized);
+
+        if (serverSnapshot === localSnapshotRef.current) return;
+
+        applyState(normalized, true);
+        await AsyncStorage.setItem(STORAGE_KEY, serverSnapshot);
+      } catch {
+        // Keep app usable offline; next successful poll will sync state.
+      }
+    }, SYNC_INTERVAL_MS);
+
+    return () => clearInterval(timer);
+  }, [isHydrated]);
 
   const includeUser = (list: string[], userId: string) => {
     if (list.includes(userId)) return list;

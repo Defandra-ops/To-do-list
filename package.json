@@ -1,4 +1,14 @@
 {
+  "private": true,
+  "scripts": {
+    "start": "npm --prefix frontend run start",
+    "android": "npm --prefix frontend run android",
+    "android:auto": "powershell -ExecutionPolicy Bypass -File .\\start-android.ps1",
+    "web": "npm --prefix frontend run web",
+    "backend:dev": "bun --cwd backend run dev",
+    "docker:up": "docker compose up --build",
+    "docker:down": "docker compose down"
+  },
   "devDependencies": {
     "@types/bun": "^1.3.11",
     "@types/node": "^25.5.2",

@@ -1,6 +1,6 @@
 import pool from "./db";
 
-const server = Bun.serve({
+Bun.serve({
   port: 3000,
   async fetch(req) {
     const url = new URL(req.url);
@@ -17,6 +17,28 @@ const server = Bun.serve({
     try {
       if (url.pathname === "/" && method === "GET") {
          return new Response("Backend is Running!", { headers });
+      }
+
+      if (method === "GET" && url.pathname === "/state") {
+        const result = await pool.query("SELECT payload FROM app_state WHERE id = 1");
+        const payload = result.rows[0]?.payload ?? { users: [], activeUserId: "", tasks: [] };
+        return Response.json(payload, { headers });
+      }
+
+      if (method === "PUT" && url.pathname === "/state") {
+        const body = await req.json();
+
+        await pool.query(
+          `
+            INSERT INTO app_state (id, payload)
+            VALUES (1, $1::jsonb)
+            ON CONFLICT (id)
+            DO UPDATE SET payload = EXCLUDED.payload, updated_at = CURRENT_TIMESTAMP
+          `,
+          [JSON.stringify(body)]
+        );
+
+        return Response.json({ message: "State saved" }, { headers });
       }
 
       if (method === "GET" && url.pathname === "/todos") {
@@ -67,3 +89,22 @@ pool.query(`
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
   );
 `).then(() => console.log("Database table checked/created"));
+
+pool
+  .query(`
+    CREATE TABLE IF NOT EXISTS app_state (
+      id INTEGER PRIMARY KEY,
+      payload JSONB NOT NULL,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+  `)
+  .then(() =>
+    pool.query(
+      `
+      INSERT INTO app_state (id, payload)
+      VALUES (1, '{"users": [], "activeUserId": "", "tasks": []}'::jsonb)
+      ON CONFLICT (id) DO NOTHING
+    `
+    )
+  )
+  .then(() => console.log("App state table checked/created"));
