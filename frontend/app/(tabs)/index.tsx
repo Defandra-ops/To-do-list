@@ -1,8 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
+import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   FlatList,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -18,7 +20,28 @@ type DraftMap = Record<string, string>;
 
 type MilestoneDraftMap = Record<string, { startDate: string; endDate: string }>;
 
+type DatePickerTarget = {
+  scope: 'new' | 'milestone';
+  field: 'startDate' | 'endDate';
+  taskId?: string;
+};
+
 const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
+
+const formatIsoDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = `${date.getMonth() + 1}`.padStart(2, '0');
+  const day = `${date.getDate()}`.padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const parseIsoDate = (value: string) => {
+  if (!value || !isIsoDate(value)) {
+    return new Date();
+  }
+
+  return new Date(`${value}T00:00:00`);
+};
 
 const getLocalIsoDate = () => {
   const today = new Date();
@@ -44,11 +67,13 @@ export default function PlannerScreen() {
   const router = useRouter();
   const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
   const [taskDraft, setTaskDraft] = useState('');
+  const [taskPeriod, setTaskPeriod] = useState<'weekly' | 'monthly'>('monthly');
   const [startDateDraft, setStartDateDraft] = useState('');
   const [endDateDraft, setEndDateDraft] = useState('');
   const [formError, setFormError] = useState('');
   const [subtaskDrafts, setSubtaskDrafts] = useState<DraftMap>({});
   const [milestoneDrafts, setMilestoneDrafts] = useState<MilestoneDraftMap>({});
+  const [activeDatePicker, setActiveDatePicker] = useState<DatePickerTarget | null>(null);
 
   const userById = useMemo(() => {
     return users.reduce<Record<string, string>>((accumulator, user) => {
@@ -113,6 +138,57 @@ export default function PlannerScreen() {
 
   const setSubtaskDraft = (taskId: string, value: string) => {
     setSubtaskDrafts((prev) => ({ ...prev, [taskId]: value }));
+  };
+
+  const openDatePicker = (target: DatePickerTarget) => {
+    setFormError('');
+    setActiveDatePicker(target);
+  };
+
+  const getDraftDate = (target: DatePickerTarget) => {
+    if (target.scope === 'new') {
+      return target.field === 'startDate' ? startDateDraft : endDateDraft;
+    }
+
+    if (!target.taskId) {
+      return '';
+    }
+
+    return milestoneDrafts[target.taskId]?.[target.field] ?? '';
+  };
+
+  const applyPickedDate = (date: Date) => {
+    if (!activeDatePicker) {
+      return;
+    }
+
+    const nextValue = formatIsoDate(date);
+
+    if (activeDatePicker.scope === 'new') {
+      if (activeDatePicker.field === 'startDate') {
+        setStartDateDraft(nextValue);
+      } else {
+        setEndDateDraft(nextValue);
+      }
+      return;
+    }
+
+    if (activeDatePicker.taskId) {
+      setMilestoneDraft(activeDatePicker.taskId, activeDatePicker.field, nextValue);
+    }
+  };
+
+  const handleDatePickerChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+    if (event.type === 'dismissed') {
+      setActiveDatePicker(null);
+      return;
+    }
+
+    applyPickedDate(selectedDate ?? new Date());
+
+    if (Platform.OS !== 'ios') {
+      setActiveDatePicker(null);
+    }
   };
 
   const addSubtaskFromDraft = (taskId: string) => {
@@ -218,25 +294,67 @@ export default function PlannerScreen() {
                 returnKeyType="next"
               />
 
-              <View style={styles.milestoneRow}>
-                <TextInput
-                  style={styles.dateInput}
-                  placeholder="Start YYYY-MM-DD"
-                  placeholderTextColor="#000000"
-                  value={startDateDraft}
-                  onChangeText={setStartDateDraft}
-                  returnKeyType="next"
-                />
-                <TextInput
-                  style={styles.dateInput}
-                  placeholder="Deadline YYYY-MM-DD"
-                  placeholderTextColor="#000000"
-                  value={endDateDraft}
-                  onChangeText={setEndDateDraft}
-                  onSubmitEditing={addTaskFromDraft}
-                  returnKeyType="done"
-                />
+              <View style={styles.periodRow}>
+                <Text style={styles.periodLabel}>Task Period:</Text>
+                <Pressable
+                  style={[
+                    styles.periodButton,
+                    taskPeriod === 'weekly' && styles.periodButtonActive,
+                  ]}
+                  onPress={() => setTaskPeriod('weekly')}>
+                  <Text
+                    style={[
+                      styles.periodButtonText,
+                      taskPeriod === 'weekly' && styles.periodButtonTextActive,
+                    ]}>
+                    Weekly
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[
+                    styles.periodButton,
+                    taskPeriod === 'monthly' && styles.periodButtonActive,
+                  ]}
+                  onPress={() => setTaskPeriod('monthly')}>
+                  <Text
+                    style={[
+                      styles.periodButtonText,
+                      taskPeriod === 'monthly' && styles.periodButtonTextActive,
+                    ]}>
+                    Monthly
+                  </Text>
+                </Pressable>
               </View>
+
+              <View style={styles.milestoneRow}>
+                  <Pressable
+                    style={[styles.datePickerButton, !startDateDraft && styles.datePickerButtonEmpty]}
+                    onPress={() => openDatePicker({ scope: 'new', field: 'startDate' })}>
+                    <Ionicons name="calendar-outline" size={16} color="#0f4fa8" />
+                    <Text style={[styles.datePickerText, !startDateDraft && styles.datePickerPlaceholderText]}>
+                      {startDateDraft || 'Pick start date'}
+                    </Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.datePickerButton, !endDateDraft && styles.datePickerButtonEmpty]}
+                    onPress={() => openDatePicker({ scope: 'new', field: 'endDate' })}>
+                    <Ionicons name="calendar-outline" size={16} color="#0f4fa8" />
+                    <Text style={[styles.datePickerText, !endDateDraft && styles.datePickerPlaceholderText]}>
+                      {endDateDraft || 'Pick deadline'}
+                    </Text>
+                  </Pressable>
+              </View>
+
+                {activeDatePicker?.scope === 'new' ? (
+                  <View style={styles.datePickerWrap}>
+                    <DateTimePicker
+                      value={parseIsoDate(getDraftDate(activeDatePicker))}
+                      mode="date"
+                      display="default"
+                      onChange={handleDatePickerChange}
+                    />
+                  </View>
+                ) : null}
 
               <Text style={styles.assignTitle}>Who must do it?</Text>
               <View style={styles.assignChipRow}>
@@ -333,20 +451,34 @@ export default function PlannerScreen() {
               </View>
 
               <View style={styles.milestoneRowTask}>
-                <TextInput
-                  style={styles.dateInputTask}
-                  placeholder="Start YYYY-MM-DD"
-                  placeholderTextColor="#b09a87"
-                  value={milestone.startDate}
-                  onChangeText={(text) => setMilestoneDraft(item.id, 'startDate', text)}
-                />
-                <TextInput
-                  style={styles.dateInputTask}
-                  placeholder="Deadline YYYY-MM-DD"
-                  placeholderTextColor="#b09a87"
-                  value={milestone.endDate}
-                  onChangeText={(text) => setMilestoneDraft(item.id, 'endDate', text)}
-                />
+                <Pressable
+                  style={[styles.datePickerButtonTask, !milestone.startDate && styles.datePickerButtonEmpty]}
+                  onPress={() =>
+                    openDatePicker({
+                      scope: 'milestone',
+                      taskId: item.id,
+                      field: 'startDate',
+                    })
+                  }>
+                  <Ionicons name="calendar-outline" size={15} color="#8b7a68" />
+                  <Text style={[styles.datePickerTextTask, !milestone.startDate && styles.datePickerPlaceholderTextTask]}>
+                    {milestone.startDate || 'Start date'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  style={[styles.datePickerButtonTask, !milestone.endDate && styles.datePickerButtonEmpty]}
+                  onPress={() =>
+                    openDatePicker({
+                      scope: 'milestone',
+                      taskId: item.id,
+                      field: 'endDate',
+                    })
+                  }>
+                  <Ionicons name="calendar-outline" size={15} color="#8b7a68" />
+                  <Text style={[styles.datePickerTextTask, !milestone.endDate && styles.datePickerPlaceholderTextTask]}>
+                    {milestone.endDate || 'Deadline'}
+                  </Text>
+                </Pressable>
                 <Pressable
                   style={styles.miniButtonWide}
                   onPress={() => saveMilestone(item.id, milestone.startDate, milestone.endDate)}>
@@ -354,7 +486,21 @@ export default function PlannerScreen() {
                 </Pressable>
               </View>
 
+              {activeDatePicker?.scope === 'milestone' && activeDatePicker.taskId === item.id ? (
+                <View style={styles.datePickerWrapTask}>
+                  <DateTimePicker
+                    value={parseIsoDate(getDraftDate(activeDatePicker))}
+                    mode="date"
+                    display="default"
+                    onChange={handleDatePickerChange}
+                  />
+                </View>
+              ) : null}
+
               <View style={styles.subtaskComposerRow}>
+                <View style={styles.subtaskPeriodBadge}>
+                  <Text style={styles.subtaskPeriodBadgeText}>Daily</Text>
+                </View>
                 <TextInput
                   style={styles.subtaskInput}
                   placeholder="Add subtask..."
@@ -597,15 +743,69 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 8,
   },
-  dateInput: {
+  datePickerButton: {
     flex: 1,
+    minHeight: 42,
     borderRadius: 10,
     backgroundColor: '#f1f1f1',
     paddingHorizontal: 10,
     paddingVertical: 9,
-    color: '#1f1f1f',
     borderWidth: 1,
     borderColor: '#d6d6d6',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  datePickerButtonEmpty: {
+    backgroundColor: '#f6f8fb',
+  },
+  datePickerText: {
+    color: '#1f1f1f',
+    fontWeight: '600',
+    flex: 1,
+  },
+  datePickerPlaceholderText: {
+    color: '#7c7c7c',
+    fontWeight: '500',
+  },
+  datePickerWrap: {
+    marginTop: 8,
+    borderRadius: 12,
+    backgroundColor: '#edf6ff',
+    borderWidth: 1,
+    borderColor: '#c6dbef',
+    overflow: 'hidden',
+  },
+  datePickerButtonTask: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 10,
+    backgroundColor: '#f1f1f1',
+    borderWidth: 1,
+    borderColor: '#d6d6d6',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  datePickerTextTask: {
+    color: '#1f1f1f',
+    fontSize: 12,
+    fontWeight: '600',
+    flex: 1,
+  },
+  datePickerPlaceholderTextTask: {
+    color: '#7c7c7c',
+    fontWeight: '500',
+  },
+  datePickerWrapTask: {
+    marginTop: 8,
+    borderRadius: 12,
+    backgroundColor: '#faf5ef',
+    borderWidth: 1,
+    borderColor: '#e2d3c3',
+    overflow: 'hidden',
   },
   errorText: {
     color: '#9a4b3b',
@@ -735,17 +935,6 @@ const styles = StyleSheet.create({
     gap: 8,
     alignItems: 'center',
   },
-  dateInputTask: {
-    flex: 1,
-    borderRadius: 10,
-    backgroundColor: '#f1f1f1',
-    borderWidth: 1,
-    borderColor: '#d6d6d6',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    color: '#1f1f1f',
-    fontSize: 12,
-  },
   miniButtonWide: {
     height: 34,
     borderRadius: 17,
@@ -825,5 +1014,48 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     color: '#777777',
     fontWeight: '600',
+  },
+  periodRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  periodLabel: {
+    color: '#0f4fa8',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  periodButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#eef6ff',
+    borderWidth: 1,
+    borderColor: '#c8def3',
+  },
+  periodButtonActive: {
+    backgroundColor: '#0f4fa8',
+    borderColor: '#0f4fa8',
+  },
+  periodButtonText: {
+    color: '#0f4fa8',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  periodButtonTextActive: {
+    color: '#ffffff',
+  },
+  subtaskPeriodBadge: {
+    backgroundColor: '#fff3cd',
+    borderWidth: 1,
+    borderColor: '#ffd700',
+    borderRadius: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  subtaskPeriodBadgeText: {
+    color: '#856404',
+    fontWeight: '700',
+    fontSize: 11,
   },
 });

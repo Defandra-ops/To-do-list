@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, G } from 'react-native-svg';
+import Svg, { Circle, G, Rect } from 'react-native-svg';
 
 import { Task, useTodoStore } from '@/components/TodoStore';
 
@@ -18,6 +18,7 @@ export default function OverviewRecordScreen() {
 
   const progressAnim = useRef(new Animated.Value(0)).current;
   const [displayRatio, setDisplayRatio] = useState(0);
+  const [subtaskViewMode, setSubtaskViewMode] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
 
   useEffect(() => {
     progressAnim.setValue(0);
@@ -37,6 +38,55 @@ export default function OverviewRecordScreen() {
       progressAnim.removeListener(listener);
     };
   }, [progressAnim, tasks]);
+
+  // subtask stats
+  const allSubtasks = useMemo(() => tasks.flatMap((task) => task.subtasks), [tasks]);
+  const subtaskStats = useMemo(() => {
+    const completed = allSubtasks.filter((st) => st.completed);
+    const failed: typeof allSubtasks = []; 
+    const ongoing = allSubtasks.filter((st) => !st.completed);
+    return { completed, failed, ongoing };
+  }, [allSubtasks]);
+
+  // Group subtasks by date period
+  const getDateKey = (dateStr: string, mode: 'daily' | 'weekly' | 'monthly') => {
+    if (!dateStr || dateStr.length < 10) return 'unknown';
+    const [year, month, day] = dateStr.split('-');
+    
+    if (mode === 'daily') {
+      return `${year}-${month}-${day}`;
+    }
+    if (mode === 'weekly') {
+      const d = new Date(`${year}-${month}-${day}T00:00:00`);
+      const week = Math.ceil((d.getDate() - d.getDay() + 1) / 7);
+      return `${year}-W${String(week).padStart(2, '0')}`;
+    }
+    return `${year}-${month}`;
+  };
+
+  const subtasksByPeriod = useMemo(() => {
+    const grouped: Record<string, { done: number; ongoing: number; label: string }> = {};
+    
+    tasks.forEach((task) => {
+      const dateStr = task.startDate || getLocalIsoDate();
+      const key = getDateKey(dateStr, subtaskViewMode);
+      
+      task.subtasks.forEach((st) => {
+        if (!grouped[key]) {
+          grouped[key] = { done: 0, ongoing: 0, label: key };
+        }
+        
+        if (st.completed) {
+          grouped[key].done += 1;
+        } else {
+          grouped[key].ongoing += 1;
+        }
+      });
+    });
+
+    const sorted = Object.entries(grouped).sort(([a], [b]) => a.localeCompare(b));
+    return sorted.slice(-12).map(([, stats]) => stats);
+  }, [tasks, subtaskViewMode]);
 
   const userById = useMemo(() => {
     return users.reduce<Record<string, string>>((acc, user) => {
@@ -63,6 +113,12 @@ export default function OverviewRecordScreen() {
   const failedRatio = failedTasks.length / safeTotal;
   const ongoingRatio = ongoingTasks.length / safeTotal;
 
+  // Subtask ratios
+  const totalSubtasks = allSubtasks.length;
+  const safeSubtaskTotal = Math.max(totalSubtasks, 1);
+  const subtaskDoneRatio = subtaskStats.completed.length / safeSubtaskTotal;
+  const subtaskOngoingRatio = subtaskStats.ongoing.length / safeSubtaskTotal;
+
   const ringRadius = 68;
   const ringCircumference = 2 * Math.PI * ringRadius;
   const segmentGap = 8;
@@ -83,6 +139,10 @@ export default function OverviewRecordScreen() {
   const displayDone = Math.round(completedTasks.length * displayRatio);
   const displayFailed = Math.round(failedTasks.length * displayRatio);
   const displayOngoing = Math.round(ongoingTasks.length * displayRatio);
+
+  // Subtask display counts
+  const displaySubtaskDone = Math.round(subtaskStats.completed.length * displayRatio);
+  const displaySubtaskOngoing = Math.round(subtaskStats.ongoing.length * displayRatio);
 
   const getUserNames = (ids: string[]) => {
     const names = ids.map((id) => userById[id]).filter((name): name is string => Boolean(name));
@@ -120,6 +180,7 @@ export default function OverviewRecordScreen() {
         <Text style={styles.title}>Overview Records</Text>
         <Text style={styles.subtitle}>Track everything that is done and failed by deadline.</Text>
 
+        <Text style={styles.chartTitle}>Big Tasks</Text>
         <Animated.View
           style={[
             styles.diagramCard,
@@ -210,6 +271,85 @@ export default function OverviewRecordScreen() {
           </View>
         </Animated.View>
 
+        <Text style={styles.chartTitle}>Subtasks</Text>
+        <Animated.View
+          style={[
+            styles.diagramCard,
+            {
+              opacity: progressAnim,
+              transform: [
+                {
+                  scale: progressAnim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.92, 1],
+                  }),
+                },
+              ],
+            },
+          ]}>
+          <View style={styles.verticalChartWrap}>
+            <View style={styles.verticalChartHeader}>
+              <Text style={styles.barChartTitle}>{totalSubtasks} Subtasks</Text>
+              <View style={styles.viewModeTabs}>
+                {(['daily', 'weekly', 'monthly'] as const).map((mode) => (
+                  <Pressable
+                    key={mode}
+                    style={[
+                      styles.viewModeTab,
+                      subtaskViewMode === mode && styles.viewModeTabActive,
+                    ]}
+                    onPress={() => setSubtaskViewMode(mode)}>
+                    <Text
+                      style={[
+                        styles.viewModeTabText,
+                        subtaskViewMode === mode && styles.viewModeTabTextActive,
+                      ]}>
+                      {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+
+            {subtasksByPeriod.length === 0 ? (
+              <Text style={styles.emptyText}>No subtasks yet.</Text>
+            ) : (
+              <View style={styles.verticalChartContainer}>
+                <Svg width="100%" height={200} viewBox="0 0 360 200">
+                  {subtasksByPeriod.map((period, idx) => {
+                    const total = period.done + period.ongoing;
+                    const maxHeight = 140;
+                    const barWidth = 24;
+                    const spacing = 360 / subtasksByPeriod.length;
+                    const x = idx * spacing + spacing / 2 - barWidth / 2;
+                    
+                    const doneHeight = (period.done / Math.max(total, 1)) * maxHeight * displayRatio;
+                    const ongoingHeight = (period.ongoing / Math.max(total, 1)) * maxHeight * displayRatio;
+
+                    return (
+                      <G key={idx}>
+                        <Rect x={x} y={maxHeight - doneHeight} width={barWidth} height={doneHeight} fill="#10b981" rx={2} />
+                        <Rect x={x} y={maxHeight - doneHeight - ongoingHeight} width={barWidth} height={ongoingHeight} fill="#3b82f6" rx={2} />
+                      </G>
+                    );
+                  })}
+                </Svg>
+              </View>
+            )}
+
+            <View style={styles.barLegendRow}>
+              <View style={styles.barLegendItem}>
+                <View style={[styles.barLegendDot, { backgroundColor: '#10b981' }]} />
+                <Text style={styles.barLegendText}>Done</Text>
+              </View>
+              <View style={styles.barLegendItem}>
+                <View style={[styles.barLegendDot, { backgroundColor: '#3b82f6' }]} />
+                <Text style={styles.barLegendText}>Ongoing</Text>
+              </View>
+            </View>
+          </View>
+        </Animated.View>
+
         <View style={styles.sectionWrap}>
           <Text style={styles.sectionTitle}>Done Tasks</Text>
           {completedTasks.length === 0 ? (
@@ -269,6 +409,12 @@ const styles = StyleSheet.create({
     marginTop: 6,
     color: '#3e5f88',
     fontSize: 14,
+  },
+  chartTitle: {
+    marginTop: 16,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#143f7d',
   },
   diagramCard: {
     marginTop: 14,
@@ -382,6 +528,96 @@ const styles = StyleSheet.create({
   recordMeta: {
     color: '#3f5a7c',
     fontWeight: '600',
+    fontSize: 12,
+  },
+  verticalChartWrap: {
+    gap: 12,
+  },
+  verticalChartHeader: {
+    gap: 8,
+  },
+  verticalChartContainer: {
+    height: 200,
+    borderRadius: 12,
+    backgroundColor: '#f6f9ff',
+    borderWidth: 1,
+    borderColor: '#d6e8ff',
+    padding: 12,
+  },
+  viewModeTabs: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  viewModeTab: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    backgroundColor: '#eef6ff',
+    borderWidth: 1,
+    borderColor: '#c6dbef',
+  },
+  viewModeTabActive: {
+    backgroundColor: '#0f4fa8',
+    borderColor: '#0f4fa8',
+  },
+  viewModeTabText: {
+    color: '#0f4fa8',
+    fontWeight: '700',
+    fontSize: 11,
+  },
+  viewModeTabTextActive: {
+    color: '#ffffff',
+  },
+  barChartWrap: {
+    gap: 12,
+  },
+  barChartHeader: {
+    marginBottom: 4,
+  },
+  barChartTitle: {
+    color: '#143f7d',
+    fontWeight: '800',
+    fontSize: 14,
+  },
+  barContainer: {
+    gap: 12,
+  },
+  barBackground: {
+    flexDirection: 'row',
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: '#e6f0ff',
+    borderWidth: 1,
+    borderColor: '#c6dbef',
+    overflow: 'hidden',
+  },
+  barSegment: {
+    height: '100%',
+  },
+  barSegmentDone: {
+    backgroundColor: '#10b981',
+  },
+  barSegmentOngoing: {
+    backgroundColor: '#3b82f6',
+  },
+  barLegendRow: {
+    flexDirection: 'row',
+    gap: 16,
+    marginTop: 4,
+  },
+  barLegendItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  barLegendDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  barLegendText: {
+    color: '#234568',
+    fontWeight: '700',
     fontSize: 12,
   },
 });
