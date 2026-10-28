@@ -3,7 +3,7 @@ $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $frontendPath = Join-Path $projectRoot 'frontend'
 $emulatorPath = Join-Path $env:LOCALAPPDATA 'Android\Sdk\emulator\emulator.exe'
-$avdName = 'Medium_Phone_API_36'
+$avdName = 'Todo_Phone_12GB_API_36'
 $port = 8081
 
 Set-Location $projectRoot
@@ -26,6 +26,6 @@ if (-not $devices) {
 Write-Host 'Preparing Android port reverse...'
 adb reverse "tcp:$port" "tcp:$port" | Out-Null
 
-Write-Host 'Starting Expo from frontend...'
+Write-Host 'Building and launching the Android development app...'
 Set-Location $frontendPath
-npx expo start --clear --port $port
+npx expo run:android --port $port

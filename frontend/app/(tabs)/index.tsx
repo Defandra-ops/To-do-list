@@ -4,9 +4,13 @@ import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
   FlatList,
+  ActivityIndicator,
+  Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   View,
@@ -15,14 +19,33 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTodoStore } from '@/components/TodoStore';
+import { getInstalledApps, type InstalledApp } from '@/modules/installed-app-picker';
 
 type DraftMap = Record<string, string>;
 
-type MilestoneDraftMap = Record<string, { startDate: string; endDate: string }>;
+type MilestoneDraft = {
+  startDate: string;
+  endDate: string;
+  isDaily: boolean;
+  dailyTime: string;
+  appName: string;
+  appPackageName: string;
+};
+type MilestoneDraftMap = Record<string, MilestoneDraft>;
 
 type DatePickerTarget = {
   scope: 'new' | 'milestone';
   field: 'startDate' | 'endDate';
+  taskId?: string;
+};
+
+type TimePickerTarget = {
+  scope: 'new' | 'milestone';
+  taskId?: string;
+};
+
+type AppPickerTarget = {
+  scope: 'new' | 'milestone';
   taskId?: string;
 };
 
@@ -35,14 +58,6 @@ const formatIsoDate = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
-const parseIsoDate = (value: string) => {
-  if (!value || !isIsoDate(value)) {
-    return new Date();
-  }
-
-  return new Date(`${value}T00:00:00`);
-};
-
 const getLocalIsoDate = () => {
   const today = new Date();
   const year = today.getFullYear();
@@ -50,6 +65,38 @@ const getLocalIsoDate = () => {
   const day = `${today.getDate()}`.padStart(2, '0');
   return `${year}-${month}-${day}`;
 };
+
+const taskOccupiesDate = (task: { startDate: string; endDate: string; isDaily: boolean }, date: string) => {
+  if (task.isDaily) return (!task.startDate || task.startDate <= date) && (!task.endDate || date <= task.endDate);
+  if (task.startDate && task.endDate) return task.startDate <= date && date <= task.endDate;
+  if (task.startDate) return task.startDate <= date;
+  if (task.endDate) return task.endDate === date;
+  return false;
+};
+
+const formatReadableDate = (date: string) =>
+  new Date(`${date}T00:00:00`).toLocaleDateString('en', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  });
+
+const formatTime = (time: string) => {
+  const [hour, minute] = time.split(':').map(Number);
+  const date = new Date();
+  date.setHours(hour, minute, 0, 0);
+  return date.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' });
+};
+
+const parseTime = (time: string) => {
+  const [hour, minute] = time.split(':').map(Number);
+  const date = new Date();
+  date.setHours(hour || 0, minute || 0, 0, 0);
+  return date;
+};
+
+const toTimeValue = (date: Date) => `${`${date.getHours()}`.padStart(2, '0')}:${`${date.getMinutes()}`.padStart(2, '0')}`;
 
 export default function PlannerScreen() {
   const {
@@ -67,13 +114,52 @@ export default function PlannerScreen() {
   const router = useRouter();
   const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
   const [taskDraft, setTaskDraft] = useState('');
-  const [taskPeriod, setTaskPeriod] = useState<'weekly' | 'monthly'>('monthly');
+  const [taskPeriod, setTaskPeriod] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
+  const [dailyTimeDraft, setDailyTimeDraft] = useState('09:00');
+  const [appNameDraft, setAppNameDraft] = useState('');
+  const [appPackageNameDraft, setAppPackageNameDraft] = useState('');
   const [startDateDraft, setStartDateDraft] = useState('');
   const [endDateDraft, setEndDateDraft] = useState('');
   const [formError, setFormError] = useState('');
   const [subtaskDrafts, setSubtaskDrafts] = useState<DraftMap>({});
   const [milestoneDrafts, setMilestoneDrafts] = useState<MilestoneDraftMap>({});
   const [activeDatePicker, setActiveDatePicker] = useState<DatePickerTarget | null>(null);
+  const [activeTimePicker, setActiveTimePicker] = useState<TimePickerTarget | null>(null);
+  const [activeAppPicker, setActiveAppPicker] = useState<AppPickerTarget | null>(null);
+  const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
+  const [appSearchDraft, setAppSearchDraft] = useState('');
+  const [isLoadingApps, setIsLoadingApps] = useState(false);
+  const [appPickerError, setAppPickerError] = useState('');
+  const [timePickerValue, setTimePickerValue] = useState(() => parseTime('09:00'));
+  const [pickerPreviewDate, setPickerPreviewDate] = useState(getLocalIsoDate());
+  const [pickerMonth, setPickerMonth] = useState(() => {
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
+  });
+
+  const pickerMonthDays = useMemo(() => {
+    const firstWeekday = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth(), 1).getDay();
+    const daysInMonth = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth() + 1, 0).getDate();
+    return Array.from({ length: 42 }, (_, index) => {
+      const day = index - firstWeekday + 1;
+      if (day < 1 || day > daysInMonth) return '';
+      const date = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth(), day);
+      return formatIsoDate(date);
+    });
+  }, [pickerMonth]);
+
+  const pickerOccupiedTasks = useMemo(
+    () => tasks.filter((task) => taskOccupiesDate(task, pickerPreviewDate)),
+    [pickerPreviewDate, tasks]
+  );
+
+  const filteredInstalledApps = useMemo(() => {
+    const query = appSearchDraft.trim().toLowerCase();
+    if (!query) return installedApps;
+    return installedApps.filter((app) =>
+      `${app.name} ${app.packageName}`.toLowerCase().includes(query)
+    );
+  }, [appSearchDraft, installedApps]);
 
   const userById = useMemo(() => {
     return users.reduce<Record<string, string>>((accumulator, user) => {
@@ -122,10 +208,23 @@ export default function PlannerScreen() {
     }
 
     const assigneeIds = selectedAssigneeIds.length > 0 ? selectedAssigneeIds : [];
-    addTask(taskDraft, startDateDraft, endDateDraft, assigneeIds);
+    addTask(
+      taskDraft,
+      startDateDraft,
+      endDateDraft,
+      assigneeIds,
+      taskPeriod === 'daily',
+      dailyTimeDraft,
+      appNameDraft,
+      appPackageNameDraft
+    );
     setTaskDraft('');
     setStartDateDraft('');
     setEndDateDraft('');
+    setTaskPeriod('monthly');
+    setDailyTimeDraft('09:00');
+    setAppNameDraft('');
+    setAppPackageNameDraft('');
     setSelectedAssigneeIds([]);
     setFormError('');
   };
@@ -142,6 +241,10 @@ export default function PlannerScreen() {
 
   const openDatePicker = (target: DatePickerTarget) => {
     setFormError('');
+    const currentDate = getDraftDate(target) || getLocalIsoDate();
+    setPickerPreviewDate(currentDate);
+    setPickerMonth(new Date(`${currentDate}T00:00:00`));
+    setPickerMonth((currentMonth) => new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1));
     setActiveDatePicker(target);
   };
 
@@ -157,38 +260,86 @@ export default function PlannerScreen() {
     return milestoneDrafts[target.taskId]?.[target.field] ?? '';
   };
 
-  const applyPickedDate = (date: Date) => {
+  const applyPickerSelection = () => {
     if (!activeDatePicker) {
       return;
     }
 
-    const nextValue = formatIsoDate(date);
-
     if (activeDatePicker.scope === 'new') {
       if (activeDatePicker.field === 'startDate') {
-        setStartDateDraft(nextValue);
+        setStartDateDraft(pickerPreviewDate);
       } else {
-        setEndDateDraft(nextValue);
+        setEndDateDraft(pickerPreviewDate);
       }
+      setActiveDatePicker(null);
       return;
     }
 
     if (activeDatePicker.taskId) {
-      setMilestoneDraft(activeDatePicker.taskId, activeDatePicker.field, nextValue);
+      setMilestoneDraft(activeDatePicker.taskId, activeDatePicker.field, pickerPreviewDate);
     }
+    setActiveDatePicker(null);
   };
 
-  const handleDatePickerChange = (event: DateTimePickerEvent, selectedDate?: Date) => {
+  const movePickerMonth = (amount: number) => {
+    setPickerMonth((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
+  };
+
+  const getMilestoneDraft = (
+    taskId: string,
+    startDate: string,
+    endDate: string,
+    isDaily: boolean,
+    dailyTime: string,
+    appName: string,
+    appPackageName: string
+  ): MilestoneDraft => milestoneDrafts[taskId] ?? { startDate, endDate, isDaily, dailyTime, appName, appPackageName };
+
+  const setMilestoneDraft = (taskId: string, key: keyof MilestoneDraft, value: string | boolean) => {
+    setMilestoneDrafts((prev) => {
+      const task = tasks.find((item) => item.id === taskId);
+      const next = prev[taskId] ?? {
+        startDate: task?.startDate ?? '',
+        endDate: task?.endDate ?? '',
+        isDaily: task?.isDaily ?? false,
+        dailyTime: task?.dailyTime ?? '09:00',
+        appName: task?.appName ?? '',
+        appPackageName: task?.appPackageName ?? '',
+      };
+      return { ...prev, [taskId]: { ...next, [key]: value } };
+    });
+  };
+
+  const getDraftTime = (target: TimePickerTarget) => {
+    if (target.scope === 'new') return dailyTimeDraft;
+    if (!target.taskId) return '09:00';
+    return milestoneDrafts[target.taskId]?.dailyTime ?? tasks.find((task) => task.id === target.taskId)?.dailyTime ?? '09:00';
+  };
+
+  const openTimePicker = (target: TimePickerTarget) => {
+    setTimePickerValue(parseTime(getDraftTime(target)));
+    setActiveTimePicker(target);
+  };
+
+  const applyTimePickerValue = (date: Date) => {
+    if (!activeTimePicker) return;
+    const nextTime = toTimeValue(date);
+    if (activeTimePicker.scope === 'new') {
+      setDailyTimeDraft(nextTime);
+    } else if (activeTimePicker.taskId) {
+      setMilestoneDraft(activeTimePicker.taskId, 'dailyTime', nextTime);
+    }
+    setActiveTimePicker(null);
+  };
+
+  const handleTimePickerChange = (event: DateTimePickerEvent, selectedTime?: Date) => {
     if (event.type === 'dismissed') {
-      setActiveDatePicker(null);
+      setActiveTimePicker(null);
       return;
     }
-
-    applyPickedDate(selectedDate ?? new Date());
-
-    if (Platform.OS !== 'ios') {
-      setActiveDatePicker(null);
-    }
+    if (!selectedTime) return;
+    setTimePickerValue(selectedTime);
+    if (Platform.OS === 'android') applyTimePickerValue(selectedTime);
   };
 
   const addSubtaskFromDraft = (taskId: string) => {
@@ -198,29 +349,46 @@ export default function PlannerScreen() {
     setSubtaskDraft(taskId, '');
   };
 
-  const getMilestoneDraft = (taskId: string, startDate: string, endDate: string) => {
-    return milestoneDrafts[taskId] ?? { startDate, endDate };
-  };
-
-  const setMilestoneDraft = (taskId: string, key: 'startDate' | 'endDate', value: string) => {
-    setMilestoneDrafts((prev) => {
-      const next = prev[taskId] ?? { startDate: '', endDate: '' };
-      return {
-        ...prev,
-        [taskId]: {
-          ...next,
-          [key]: value,
-        },
-      };
-    });
-  };
-
-  const saveMilestone = (taskId: string, startDate: string, endDate: string) => {
+  const saveMilestone = (taskId: string, draft: MilestoneDraft) => {
+    const { startDate, endDate, isDaily, dailyTime, appName, appPackageName } = draft;
     if (startDate && !isIsoDate(startDate)) return;
     if (endDate && !isIsoDate(endDate)) return;
     if (startDate && endDate && startDate > endDate) return;
 
-    updateTaskMilestone(taskId, startDate, endDate);
+    updateTaskMilestone(taskId, startDate, endDate, isDaily, dailyTime, appName, appPackageName);
+  };
+
+  const openAppPicker = async (target: AppPickerTarget) => {
+    setActiveAppPicker(target);
+    setAppSearchDraft('');
+    setAppPickerError('');
+    if (Platform.OS !== 'android') {
+      setInstalledApps([]);
+      setAppPickerError('Installed app selection is available in the Android app.');
+      return;
+    }
+
+    setIsLoadingApps(true);
+    try {
+      setInstalledApps(await getInstalledApps());
+    } catch {
+      setAppPickerError('Could not load installed apps. Rebuild the Android development app and try again.');
+      setInstalledApps([]);
+    } finally {
+      setIsLoadingApps(false);
+    }
+  };
+
+  const selectInstalledApp = (app: InstalledApp | null) => {
+    if (!activeAppPicker) return;
+    if (activeAppPicker.scope === 'new') {
+      setAppNameDraft(app?.name ?? '');
+      setAppPackageNameDraft(app?.packageName ?? '');
+    } else if (activeAppPicker.taskId) {
+      setMilestoneDraft(activeAppPicker.taskId, 'appName', app?.name ?? '');
+      setMilestoneDraft(activeAppPicker.taskId, 'appPackageName', app?.packageName ?? '');
+    }
+    setActiveAppPicker(null);
   };
 
   return (
@@ -324,7 +492,38 @@ export default function PlannerScreen() {
                     Monthly
                   </Text>
                 </Pressable>
+                <Pressable
+                  style={[styles.periodButton, taskPeriod === 'daily' && styles.periodButtonActive]}
+                  onPress={() => setTaskPeriod(taskPeriod === 'daily' ? 'monthly' : 'daily')}>
+                  <Text style={[styles.periodButtonText, taskPeriod === 'daily' && styles.periodButtonTextActive]}>
+                    Daily
+                  </Text>
+                </Pressable>
               </View>
+
+              {taskPeriod === 'daily' ? (
+                <>
+                  <Pressable
+                    style={styles.dailyAppInputRow}
+                    onPress={() => void openAppPicker({ scope: 'new' })}>
+                    <Ionicons name="apps-outline" size={18} color="#0f4fa8" />
+                    <View style={styles.dailyAppPickerTextWrap}>
+                      <Text style={styles.dailyAppPickerTitle}>
+                        {appNameDraft || 'Choose installed app'}
+                      </Text>
+                      <Text style={styles.dailyAppPickerSubtitle}>
+                        {appPackageNameDraft || 'Optional · habit without an app'}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#66839e" />
+                  </Pressable>
+                  <Pressable style={styles.dailyTimeButton} onPress={() => openTimePicker({ scope: 'new' })}>
+                    <Ionicons name="time-outline" size={18} color="#0f4fa8" />
+                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(dailyTimeDraft)}</Text>
+                    <Ionicons name="chevron-forward" size={16} color="#66839e" />
+                  </Pressable>
+                </>
+              ) : null}
 
               <View style={styles.milestoneRow}>
                   <Pressable
@@ -344,17 +543,6 @@ export default function PlannerScreen() {
                     </Text>
                   </Pressable>
               </View>
-
-                {activeDatePicker?.scope === 'new' ? (
-                  <View style={styles.datePickerWrap}>
-                    <DateTimePicker
-                      value={parseIsoDate(getDraftDate(activeDatePicker))}
-                      mode="date"
-                      display="default"
-                      onChange={handleDatePickerChange}
-                    />
-                  </View>
-                ) : null}
 
               <Text style={styles.assignTitle}>Who must do it?</Text>
               <View style={styles.assignChipRow}>
@@ -392,10 +580,18 @@ export default function PlannerScreen() {
           const total = item.subtasks.length;
           const done = item.subtasks.filter((subtask) => subtask.completed).length;
           const progress = total === 0 ? 0 : Math.round((done / total) * 100);
-          const milestone = getMilestoneDraft(item.id, item.startDate, item.endDate);
-          const statusLabel = item.completed ? 'Completed' : 'In progress';
+          const milestone = getMilestoneDraft(
+            item.id,
+            item.startDate,
+            item.endDate,
+            item.isDaily,
+            item.dailyTime,
+            item.appName,
+            item.appPackageName
+          );
+          const statusLabel = item.completed ? 'Completed' : item.isDaily ? 'Daily' : 'In progress';
           const deadlineLabel = item.endDate ? `Deadline ${item.endDate}` : 'No deadline';
-          const isOverdue = Boolean(item.endDate) && !item.completed && item.endDate < getLocalIsoDate();
+          const isOverdue = !item.isDaily && Boolean(item.endDate) && !item.completed && item.endDate < getLocalIsoDate();
           const creatorName = userById[item.createdByUserId] ?? 'Unknown user';
           const deadlineByName = userById[item.deadlineByUserId] ?? creatorName;
           const includedUsers = item.participantUserIds
@@ -416,7 +612,10 @@ export default function PlannerScreen() {
                   />
                   <View style={styles.taskTextWrap}>
                     <Text style={[styles.taskTitle, item.completed && styles.completedText]}>{item.title}</Text>
-                    <Text style={styles.taskMeta}>Subtasks done: {done}/{total}</Text>
+                    <Text style={styles.taskMeta}>
+                      {item.isDaily ? `Daily at ${formatTime(item.dailyTime)} · ` : ''}Subtasks done: {done}/{total}
+                    </Text>
+                    {item.appName ? <Text style={styles.taskOwnerText}>App: {item.appName}</Text> : null}
                     <Text style={styles.taskOwnerText}>Created by {creatorName}</Text>
                     <Text style={styles.taskOwnerText}>Deadline by {deadlineByName}</Text>
                     <Text style={styles.taskOwnerText}>
@@ -481,20 +680,45 @@ export default function PlannerScreen() {
                 </Pressable>
                 <Pressable
                   style={styles.miniButtonWide}
-                  onPress={() => saveMilestone(item.id, milestone.startDate, milestone.endDate)}>
+                  onPress={() => saveMilestone(item.id, milestone)}>
                   <Text style={styles.miniButtonText}>Save</Text>
                 </Pressable>
               </View>
 
-              {activeDatePicker?.scope === 'milestone' && activeDatePicker.taskId === item.id ? (
-                <View style={styles.datePickerWrapTask}>
-                  <DateTimePicker
-                    value={parseIsoDate(getDraftDate(activeDatePicker))}
-                    mode="date"
-                    display="default"
-                    onChange={handleDatePickerChange}
-                  />
+              <View style={styles.dailyScheduleRow}>
+                <View style={styles.dailyScheduleLabelWrap}>
+                  <Ionicons name="repeat-outline" size={17} color="#0f4fa8" />
+                  <Text style={styles.dailyScheduleLabel}>Repeat daily</Text>
                 </View>
+                <Switch
+                  value={milestone.isDaily}
+                  onValueChange={(value) => setMilestoneDraft(item.id, 'isDaily', value)}
+                  trackColor={{ false: '#cbd5df', true: '#88b9e3' }}
+                  thumbColor={milestone.isDaily ? '#2368a7' : '#f4f3f4'}
+                />
+              </View>
+              {milestone.isDaily ? (
+                <>
+                  <Pressable
+                    style={styles.dailyAppInputRow}
+                    onPress={() => void openAppPicker({ scope: 'milestone', taskId: item.id })}>
+                    <Ionicons name="apps-outline" size={17} color="#0f4fa8" />
+                    <View style={styles.dailyAppPickerTextWrap}>
+                      <Text style={styles.dailyAppPickerTitle}>
+                        {milestone.appName || 'Choose installed app'}
+                      </Text>
+                      <Text style={styles.dailyAppPickerSubtitle}>
+                        {milestone.appPackageName || 'Optional · habit without an app'}
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#66839e" />
+                  </Pressable>
+                  <Pressable style={styles.dailyTimeButtonTask} onPress={() => openTimePicker({ scope: 'milestone', taskId: item.id })}>
+                    <Ionicons name="time-outline" size={16} color="#0f4fa8" />
+                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(milestone.dailyTime)}</Text>
+                    <Ionicons name="chevron-forward" size={15} color="#66839e" />
+                  </Pressable>
+                </>
               ) : null}
 
               <View style={styles.subtaskComposerRow}>
@@ -535,6 +759,196 @@ export default function PlannerScreen() {
         }}
         ListEmptyComponent={<Text style={styles.emptyState}>No tasks yet. Start with one big goal above.</Text>}
       />
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={activeDatePicker !== null}
+        onRequestClose={() => setActiveDatePicker(null)}>
+        <View style={styles.dateModalBackdrop}>
+          <Pressable
+            accessibilityLabel="Close date picker"
+            style={StyleSheet.absoluteFill}
+            onPress={() => setActiveDatePicker(null)}
+          />
+          <View style={styles.dateModalPanel}>
+            <View style={styles.dateModalHeader}>
+              <View style={styles.dateModalTitleWrap}>
+                <Text style={styles.dateModalEyebrow}>TASK SCHEDULE</Text>
+                <Text style={styles.dateModalTitle}>
+                  Select {activeDatePicker?.field === 'startDate' ? 'start date' : 'deadline'}
+                </Text>
+              </View>
+              <Pressable style={styles.dateModalClose} onPress={() => setActiveDatePicker(null)}>
+                <Ionicons name="close" size={20} color="#344861" />
+              </Pressable>
+            </View>
+
+            <View style={styles.dateModalMonthRow}>
+              <Text style={styles.dateModalMonthTitle}>
+                {pickerMonth.toLocaleDateString('en', { month: 'long', year: 'numeric' })}
+              </Text>
+              <View style={styles.dateModalMonthControls}>
+                <Pressable accessibilityLabel="Previous month" style={styles.dateModalMonthButton} onPress={() => movePickerMonth(-1)}>
+                  <Ionicons name="chevron-back" size={18} color="#344861" />
+                </Pressable>
+                <Pressable accessibilityLabel="Next month" style={styles.dateModalMonthButton} onPress={() => movePickerMonth(1)}>
+                  <Ionicons name="chevron-forward" size={18} color="#344861" />
+                </Pressable>
+              </View>
+            </View>
+
+            <View style={styles.datePickerWeekdays}>
+              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+                <Text key={`${day}-${index}`} style={styles.datePickerWeekday}>{day}</Text>
+              ))}
+            </View>
+            <View style={styles.datePickerGrid}>
+              {pickerMonthDays.map((date, index) => {
+                const occupiedTasks = date ? tasks.filter((task) => taskOccupiesDate(task, date)) : [];
+                const isSelected = date === pickerPreviewDate;
+                const isToday = date === getLocalIsoDate();
+                return (
+                  <Pressable
+                    key={`${date || 'blank'}-${index}`}
+                    disabled={!date}
+                    accessibilityRole="button"
+                    accessibilityLabel={date ? `${formatReadableDate(date)}${occupiedTasks.length ? `, occupied by ${occupiedTasks.map((task) => task.title).join(', ')}` : ', no tasks scheduled'}` : undefined}
+                    style={[styles.datePickerDay, isSelected && styles.datePickerDaySelected]}
+                    onPress={() => setPickerPreviewDate(date)}>
+                    {date ? (
+                      <>
+                        <Text style={[styles.datePickerDayNumber, isToday && styles.datePickerDayToday, isSelected && styles.datePickerDayNumberSelected]}>
+                          {Number(date.slice(-2))}
+                        </Text>
+                        <View style={styles.datePickerDots}>
+                          {occupiedTasks.slice(0, 3).map((task) => (
+                            <View key={task.id} style={[styles.datePickerDot, { backgroundColor: task.completed ? '#25805a' : '#d66c3d' }]} />
+                          ))}
+                        </View>
+                      </>
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+
+            <View style={styles.occupiedHint}>
+              <View style={styles.occupiedHintHeader}>
+                <Ionicons name="information-circle-outline" size={18} color="#2368a7" />
+                <Text style={styles.occupiedHintTitle}>{formatReadableDate(pickerPreviewDate)}</Text>
+              </View>
+              <Text style={styles.occupiedHintLabel}>
+                {pickerOccupiedTasks.length > 0 ? 'Already occupied by:' : 'No tasks currently occupy this date.'}
+              </Text>
+              {pickerOccupiedTasks.length > 0 ? (
+                <ScrollView style={styles.occupiedTaskList} nestedScrollEnabled>
+                  {pickerOccupiedTasks.map((task) => (
+                    <View key={task.id} style={styles.occupiedTaskRow}>
+                      <View style={[styles.occupiedTaskDot, { backgroundColor: task.completed ? '#25805a' : '#d66c3d' }]} />
+                      <View style={styles.occupiedTaskTextWrap}>
+                        <Text style={styles.occupiedTaskTitle}>{task.title}</Text>
+                        <Text style={styles.occupiedTaskDates}>
+                          {task.startDate && task.endDate
+                            ? `${task.startDate} to ${task.endDate}`
+                            : task.startDate
+                              ? `From ${task.startDate} onward`
+                              : `Deadline ${task.endDate}`}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </ScrollView>
+              ) : null}
+            </View>
+
+            <View style={styles.dateModalActions}>
+              <Pressable style={styles.dateModalCancel} onPress={() => setActiveDatePicker(null)}>
+                <Text style={styles.dateModalCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.dateModalConfirm} onPress={applyPickerSelection}>
+                <Text style={styles.dateModalConfirmText}>Use date</Text>
+                <Ionicons name="arrow-forward" size={16} color="#ffffff" />
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={activeAppPicker !== null}
+        onRequestClose={() => setActiveAppPicker(null)}>
+        <View style={styles.appModalBackdrop}>
+          <Pressable
+            accessibilityLabel="Close installed app picker"
+            style={StyleSheet.absoluteFill}
+            onPress={() => setActiveAppPicker(null)}
+          />
+          <View style={styles.appModalPanel}>
+            <View style={styles.appModalHeader}>
+              <View style={styles.appModalTitleWrap}>
+                <Text style={styles.dateModalEyebrow}>DAILY TASK</Text>
+                <Text style={styles.appModalTitle}>Choose an installed app</Text>
+              </View>
+              <Pressable style={styles.dateModalClose} onPress={() => setActiveAppPicker(null)}>
+                <Ionicons name="close" size={20} color="#344861" />
+              </Pressable>
+            </View>
+
+            <View style={styles.appSearchRow}>
+              <Ionicons name="search-outline" size={18} color="#688094" />
+              <TextInput
+                style={styles.appSearchInput}
+                placeholder="Search installed apps"
+                placeholderTextColor="#8293a1"
+                value={appSearchDraft}
+                onChangeText={setAppSearchDraft}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+            </View>
+
+            <Pressable style={styles.noAppOption} onPress={() => selectInstalledApp(null)}>
+              <Ionicons name="walk-outline" size={20} color="#2368a7" />
+              <View style={styles.installedAppTextWrap}>
+                <Text style={styles.installedAppTitle}>Habit without an app</Text>
+                <Text style={styles.installedAppPackage}>For jogging, reading, and similar routines</Text>
+              </View>
+            </Pressable>
+
+            {isLoadingApps ? (
+              <View style={styles.appPickerState}>
+                <ActivityIndicator color="#2368a7" />
+                <Text style={styles.appPickerStateText}>Loading apps on this device...</Text>
+              </View>
+            ) : appPickerError ? (
+              <Text style={styles.appPickerError}>{appPickerError}</Text>
+            ) : filteredInstalledApps.length > 0 ? (
+              <ScrollView style={styles.installedAppsList} keyboardShouldPersistTaps="handled">
+                {filteredInstalledApps.map((app) => (
+                  <Pressable
+                    key={app.packageName}
+                    style={styles.installedAppRow}
+                    onPress={() => selectInstalledApp(app)}>
+                    <View style={styles.installedAppIcon}>
+                      <Ionicons name="phone-portrait-outline" size={18} color="#2368a7" />
+                    </View>
+                    <View style={styles.installedAppTextWrap}>
+                      <Text style={styles.installedAppTitle}>{app.name}</Text>
+                      <Text style={styles.installedAppPackage}>{app.packageName}</Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={16} color="#8293a1" />
+                  </Pressable>
+                ))}
+              </ScrollView>
+            ) : (
+              <Text style={styles.appPickerStateText}>No matching launchable apps found.</Text>
+            )}
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -768,14 +1182,6 @@ const styles = StyleSheet.create({
     color: '#7c7c7c',
     fontWeight: '500',
   },
-  datePickerWrap: {
-    marginTop: 8,
-    borderRadius: 12,
-    backgroundColor: '#edf6ff',
-    borderWidth: 1,
-    borderColor: '#c6dbef',
-    overflow: 'hidden',
-  },
   datePickerButtonTask: {
     flex: 1,
     minHeight: 38,
@@ -799,13 +1205,207 @@ const styles = StyleSheet.create({
     color: '#7c7c7c',
     fontWeight: '500',
   },
-  datePickerWrapTask: {
-    marginTop: 8,
+  dateModalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 18,
+    backgroundColor: 'rgba(18, 38, 54, 0.48)',
+  },
+  dateModalPanel: {
+    maxHeight: '90%',
+    padding: 16,
+    backgroundColor: '#ffffff',
     borderRadius: 12,
-    backgroundColor: '#faf5ef',
     borderWidth: 1,
-    borderColor: '#e2d3c3',
-    overflow: 'hidden',
+    borderColor: '#d5e1e9',
+  },
+  dateModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 13,
+  },
+  dateModalTitleWrap: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  dateModalEyebrow: {
+    color: '#688094',
+    fontSize: 10,
+    fontWeight: '800',
+    letterSpacing: 1,
+  },
+  dateModalTitle: {
+    marginTop: 4,
+    color: '#20394f',
+    fontSize: 19,
+    fontWeight: '800',
+    textTransform: 'capitalize',
+  },
+  dateModalClose: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff4f7',
+    borderRadius: 7,
+  },
+  dateModalMonthRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  dateModalMonthTitle: {
+    color: '#20394f',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  dateModalMonthControls: {
+    flexDirection: 'row',
+    gap: 6,
+  },
+  dateModalMonthButton: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff4f7',
+    borderRadius: 7,
+  },
+  datePickerWeekdays: {
+    flexDirection: 'row',
+    marginBottom: 3,
+  },
+  datePickerWeekday: {
+    width: `${100 / 7}%`,
+    color: '#8392a0',
+    fontSize: 10,
+    fontWeight: '800',
+    textAlign: 'center',
+  },
+  datePickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+  },
+  datePickerDay: {
+    width: `${100 / 7}%`,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 7,
+  },
+  datePickerDaySelected: {
+    backgroundColor: '#dcecf7',
+  },
+  datePickerDayNumber: {
+    color: '#34495b',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  datePickerDayToday: {
+    color: '#176ba8',
+    fontWeight: '900',
+  },
+  datePickerDayNumberSelected: {
+    color: '#135a91',
+  },
+  datePickerDots: {
+    height: 5,
+    flexDirection: 'row',
+    gap: 3,
+    marginTop: 1,
+  },
+  datePickerDot: {
+    width: 4,
+    height: 4,
+    borderRadius: 2,
+  },
+  occupiedHint: {
+    marginTop: 11,
+    padding: 10,
+    backgroundColor: '#f1f6fa',
+    borderRadius: 8,
+  },
+  occupiedHintHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  occupiedHintTitle: {
+    flex: 1,
+    color: '#20394f',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  occupiedHintLabel: {
+    marginTop: 5,
+    color: '#687d8e',
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  occupiedTaskList: {
+    maxHeight: 88,
+    marginTop: 5,
+  },
+  occupiedTaskRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 7,
+    paddingVertical: 4,
+  },
+  occupiedTaskDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+  },
+  occupiedTaskTextWrap: {
+    flex: 1,
+  },
+  occupiedTaskTitle: {
+    color: '#34495b',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  occupiedTaskDates: {
+    marginTop: 1,
+    color: '#788b9b',
+    fontSize: 10,
+  },
+  dateModalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 9,
+    marginTop: 13,
+  },
+  dateModalCancel: {
+    minWidth: 80,
+    minHeight: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eff4f7',
+    borderRadius: 7,
+  },
+  dateModalCancelText: {
+    color: '#526577',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dateModalConfirm: {
+    minWidth: 108,
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    backgroundColor: '#2368a7',
+    borderRadius: 7,
+  },
+  dateModalConfirmText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
   },
   errorText: {
     color: '#9a4b3b',
@@ -873,6 +1473,190 @@ const styles = StyleSheet.create({
     color: '#3f6ea8',
     fontWeight: '700',
     fontSize: 11,
+  },
+  dailyAppInputRow: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 11,
+    backgroundColor: '#f3f8fc',
+    borderWidth: 1,
+    borderColor: '#d3e2ee',
+    borderRadius: 9,
+  },
+  dailyAppPickerTextWrap: {
+    flex: 1,
+    justifyContent: 'center',
+    paddingVertical: 6,
+  },
+  dailyAppPickerTitle: {
+    color: '#20394f',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  dailyAppPickerSubtitle: {
+    marginTop: 2,
+    color: '#71849a',
+    fontSize: 10,
+  },
+  appModalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 18,
+    backgroundColor: 'rgba(18, 38, 54, 0.48)',
+  },
+  appModalPanel: {
+    maxHeight: '85%',
+    padding: 16,
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#d5e1e9',
+  },
+  appModalHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  appModalTitleWrap: {
+    flex: 1,
+    paddingRight: 10,
+  },
+  appModalTitle: {
+    marginTop: 4,
+    color: '#20394f',
+    fontSize: 19,
+    fontWeight: '800',
+  },
+  appSearchRow: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 11,
+    backgroundColor: '#f1f6fa',
+    borderWidth: 1,
+    borderColor: '#dce6ed',
+    borderRadius: 8,
+  },
+  appSearchInput: {
+    flex: 1,
+    paddingVertical: 8,
+    color: '#20394f',
+    fontSize: 13,
+  },
+  noAppOption: {
+    minHeight: 54,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 10,
+    paddingHorizontal: 10,
+    backgroundColor: '#edf5fb',
+    borderRadius: 8,
+  },
+  installedAppsList: {
+    flexGrow: 0,
+    marginTop: 9,
+  },
+  installedAppRow: {
+    minHeight: 58,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#dce6ed',
+  },
+  installedAppIcon: {
+    width: 34,
+    height: 34,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#e3eff8',
+    borderRadius: 8,
+  },
+  installedAppTextWrap: {
+    flex: 1,
+  },
+  installedAppTitle: {
+    color: '#20394f',
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  installedAppPackage: {
+    marginTop: 2,
+    color: '#788b9b',
+    fontSize: 10,
+  },
+  appPickerState: {
+    minHeight: 80,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  appPickerStateText: {
+    paddingVertical: 16,
+    color: '#788b9b',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  appPickerError: {
+    paddingVertical: 16,
+    color: '#9a4b3b',
+    fontSize: 12,
+    textAlign: 'center',
+  },
+  dailyTimeButton: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 11,
+    backgroundColor: '#eef6ff',
+    borderWidth: 1,
+    borderColor: '#c8def3',
+    borderRadius: 9,
+  },
+  dailyTimeButtonTask: {
+    minHeight: 38,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 7,
+    paddingHorizontal: 10,
+    backgroundColor: '#eef6ff',
+    borderWidth: 1,
+    borderColor: '#c8def3',
+    borderRadius: 9,
+  },
+  dailyTimeButtonText: {
+    flex: 1,
+    color: '#0f4fa8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  dailyScheduleRow: {
+    minHeight: 42,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 8,
+    paddingHorizontal: 10,
+    backgroundColor: '#f3f8fc',
+    borderRadius: 8,
+  },
+  dailyScheduleLabelWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  dailyScheduleLabel: {
+    color: '#34495b',
+    fontSize: 12,
+    fontWeight: '700',
   },
   badgeRow: {
     flexDirection: 'row',
@@ -1018,6 +1802,7 @@ const styles = StyleSheet.create({
   periodRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    flexWrap: 'wrap',
     gap: 8,
   },
   periodLabel: {

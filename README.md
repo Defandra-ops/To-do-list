@@ -58,13 +58,13 @@ emulator-5554   device
 
 If it is offline or missing, restart the emulator before continuing.
 
-### 2. Start the frontend from the correct folder
+### 2. Build and start the Android development app
 
-Use this exact command:
+For local notifications, install and run the native development build instead of Expo Go:
 
 ```bash
 cd C:\xampp\htdocs\todo-app\frontend
-npx expo start --clear --port 8081
+npx expo run:android
 ```
 
 ### One-command Windows launch
@@ -77,9 +77,9 @@ npm run android:auto
 
 What it does:
 - starts ADB
-- boots the Android emulator if needed
-- reverses port 8081
-- starts Expo from `frontend/`
+- boots `Todo_Phone_12GB_API_36` if no Android emulator is running
+- builds and installs the Android development app
+- starts Metro and opens the app from `frontend/`
 
 This avoids manually running `adb kill`, `adb start-server`, or `adb reverse`.
 
@@ -88,15 +88,16 @@ Important:
 - Use `--port 8081`, not `--port--8081`.
 - If 8081 is busy, stop the other Expo session first.
 
-### 3. Connect Android
+### 3. Start Metro after the development app is installed
 
-If you are using the emulator, run:
+For later sessions, start Metro in development-client mode:
 
 ```bash
-adb reverse tcp:8081 tcp:8081
+cd frontend
+npx expo start --dev-client --clear --port 8081
 ```
 
-Then press `a` in the Expo terminal to open Android.
+Open the installed development app on the emulator. Expo Go does not support Android remote push notifications; use the development app for native notification features.
 
 ### 4. If the emulator gets stuck
 

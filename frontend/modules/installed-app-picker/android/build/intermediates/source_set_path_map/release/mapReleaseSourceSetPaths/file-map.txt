@@ -1,0 +1,7 @@
+expo.modules.installedapppicker.installed-app-picker-pngs-0 C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\build\generated\res\pngs\release
+expo.modules.installedapppicker.installed-app-picker-resValues-1 C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\build\generated\res\resValues\release
+expo.modules.installedapppicker.installed-app-picker-mergeReleaseResources-2 C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\build\intermediates\incremental\release\mergeReleaseResources\merged.dir
+expo.modules.installedapppicker.installed-app-picker-mergeReleaseResources-3 C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\build\intermediates\incremental\release\mergeReleaseResources\stripped.dir
+expo.modules.installedapppicker.installed-app-picker-release-4 C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\build\intermediates\merged_res\release\mergeReleaseResources
+expo.modules.installedapppicker.installed-app-picker-main-5 C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\src\main\res
+expo.modules.installedapppicker.installed-app-picker-release-6 C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\src\release\res
