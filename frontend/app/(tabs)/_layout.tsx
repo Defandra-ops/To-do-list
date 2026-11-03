@@ -3,8 +3,7 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, Tabs } from 'expo-router';
 import { Pressable } from 'react-native';
 
-import Colors from '@/constants/Colors';
-import { useColorScheme } from '@/components/useColorScheme';
+import { theme } from '@/constants/Colors';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 
 
@@ -16,28 +15,27 @@ function TabBarIcon(props: {
 }
 
 export default function TabLayout() {
-  const colorScheme = useColorScheme();
-
   return (
     <Tabs
       screenOptions={{
-        tabBarActiveTintColor: Colors[colorScheme ?? 'light'].tint,
+        tabBarActiveTintColor: theme.colors.buttonDark,
+        tabBarInactiveTintColor: theme.colors.textMuted,
         tabBarStyle: {
-          backgroundColor: '#f2f2f2',
-          borderTopColor: '#d9d9d9',
-          height: 66,
-          paddingBottom: 8,
-          paddingTop: 6,
+          backgroundColor: theme.colors.cardBackground,
+          borderTopColor: theme.colors.border,
+          height: 70,
+          paddingBottom: 9,
+          paddingTop: 7,
         },
         tabBarLabelStyle: {
           fontSize: 12,
-          fontWeight: '700',
+          fontFamily: 'Nunito_700Bold',
         },
         headerStyle: {
-          backgroundColor: '#f7f7f7',
+          backgroundColor: theme.colors.cardBackground,
         },
         headerTitleStyle: {
-          fontWeight: '800',
+          fontFamily: 'Nunito_800ExtraBold',
         },
 
         headerShown: useClientOnlyValue(false, true),
@@ -54,7 +52,7 @@ export default function TabLayout() {
                   <FontAwesome
                     name="magic"
                     size={25}
-                    color={Colors[colorScheme ?? 'light'].text}
+                    color={theme.colors.buttonDark}
                     style={{ marginRight: 15, opacity: pressed ? 0.5 : 1 }}
                   />
                 )}

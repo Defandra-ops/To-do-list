@@ -1,10 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useMemo, useState } from 'react';
 import {
-  FlatList,
   ActivityIndicator,
+  FlatList,
   Modal,
   Platform,
   Pressable,
@@ -15,11 +16,11 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTodoStore } from '@/components/TodoStore';
 import { getInstalledApps, type InstalledApp } from '@/modules/installed-app-picker';
+import { theme } from '@/constants/Colors';
 
 type DraftMap = Record<string, string>;
 
@@ -102,6 +103,7 @@ export default function PlannerScreen() {
   const {
     tasks,
     users,
+    activeUserId,
     addTask,
     removeTask,
     toggleTask,
@@ -112,6 +114,7 @@ export default function PlannerScreen() {
   } = useTodoStore();
 
   const router = useRouter();
+  const activeUserName = users.find((user) => user.id === activeUserId)?.name ?? 'Default user';
   const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
   const [taskDraft, setTaskDraft] = useState('');
   const [taskPeriod, setTaskPeriod] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -393,38 +396,37 @@ export default function PlannerScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.backdropBubbleOne} />
-      <View style={styles.backdropBubbleTwo} />
-
       <FlatList
         data={tasks}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.content}
         ListHeaderComponent={
           <View style={styles.headerWrap}>
-            <View style={styles.headerTopRow}>
-              <View>
-                <Text style={styles.eyebrow}>Planner</Text>
-                <Text style={styles.title}>Big Tasks</Text>
+            <View style={styles.heroCard}>
+              <View style={styles.headerTopRow}>
+                <View>
+                  <Text style={styles.eyebrow}>YOUR PERSONAL PLANNER</Text>
+                  <Text style={styles.title}>Big Tasks</Text>
+                </View>
+                <Pressable style={styles.userIconButton} onPress={() => router.push('/(tabs)/two')}>
+                  <Ionicons name="person-circle-outline" size={30} color={theme.colors.buttonDark} />
+                </Pressable>
               </View>
-              <Pressable style={styles.userIconButton} onPress={() => router.push('/(tabs)/two')}>
-                <Ionicons name="person-circle-outline" size={30} color="#0f4fa8" />
-              </Pressable>
-            </View>
-            <Text style={styles.subtitle}>Set from-date, deadline, and then break the work into subtasks.</Text>
+              <Text style={styles.subtitle}>Make room for what matters, one step at a time.</Text>
 
-            <View style={styles.statsRow}>
-              <View style={[styles.statCard, styles.statCardTotal]}>
-                <Text style={styles.statNumber}>{stats.totalTasks}</Text>
-                <Text style={styles.statLabel}>Big Tasks</Text>
-              </View>
-              <View style={[styles.statCard, styles.statCardCompleted]}>
-                <Text style={styles.statNumber}>{stats.doneTasks}</Text>
-                <Text style={styles.statLabel}>Completed</Text>
-              </View>
-              <View style={[styles.statCard, styles.statCardDeadline]}>
-                <Text style={styles.statNumber}>{stats.withDeadlines}</Text>
-                <Text style={styles.statLabel}>With Deadline</Text>
+              <View style={styles.statsRow}>
+                <View style={[styles.statCard, styles.statCardTotal]}>
+                  <Text style={styles.statNumber}>{stats.totalTasks}</Text>
+                  <Text style={styles.statLabel}>Big Tasks</Text>
+                </View>
+                <View style={[styles.statCard, styles.statCardCompleted]}>
+                  <Text style={styles.statNumber}>{stats.doneTasks}</Text>
+                  <Text style={styles.statLabel}>Completed</Text>
+                </View>
+                <View style={[styles.statCard, styles.statCardDeadline]}>
+                  <Text style={styles.statNumber}>{stats.withDeadlines}</Text>
+                  <Text style={styles.statLabel}>With Deadline</Text>
+                </View>
               </View>
             </View>
 
@@ -456,7 +458,7 @@ export default function PlannerScreen() {
               <TextInput
                 style={styles.taskInput}
                 placeholder="Add a task..."
-                placeholderTextColor="#000000"
+                placeholderTextColor={theme.colors.textSecondary}
                 value={taskDraft}
                 onChangeText={setTaskDraft}
                 returnKeyType="next"
@@ -506,7 +508,7 @@ export default function PlannerScreen() {
                   <Pressable
                     style={styles.dailyAppInputRow}
                     onPress={() => void openAppPicker({ scope: 'new' })}>
-                    <Ionicons name="apps-outline" size={18} color="#0f4fa8" />
+                    <Ionicons name="apps-outline" size={18} color={theme.colors.buttonDark} />
                     <View style={styles.dailyAppPickerTextWrap}>
                       <Text style={styles.dailyAppPickerTitle}>
                         {appNameDraft || 'Choose installed app'}
@@ -515,12 +517,12 @@ export default function PlannerScreen() {
                         {appPackageNameDraft || 'Optional · habit without an app'}
                       </Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color="#66839e" />
+                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
                   </Pressable>
                   <Pressable style={styles.dailyTimeButton} onPress={() => openTimePicker({ scope: 'new' })}>
-                    <Ionicons name="time-outline" size={18} color="#0f4fa8" />
+                    <Ionicons name="time-outline" size={18} color={theme.colors.buttonDark} />
                     <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(dailyTimeDraft)}</Text>
-                    <Ionicons name="chevron-forward" size={16} color="#66839e" />
+                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
                   </Pressable>
                 </>
               ) : null}
@@ -529,7 +531,7 @@ export default function PlannerScreen() {
                   <Pressable
                     style={[styles.datePickerButton, !startDateDraft && styles.datePickerButtonEmpty]}
                     onPress={() => openDatePicker({ scope: 'new', field: 'startDate' })}>
-                    <Ionicons name="calendar-outline" size={16} color="#0f4fa8" />
+                    <Ionicons name="calendar-outline" size={16} color={theme.colors.buttonDark} />
                     <Text style={[styles.datePickerText, !startDateDraft && styles.datePickerPlaceholderText]}>
                       {startDateDraft || 'Pick start date'}
                     </Text>
@@ -537,7 +539,7 @@ export default function PlannerScreen() {
                   <Pressable
                     style={[styles.datePickerButton, !endDateDraft && styles.datePickerButtonEmpty]}
                     onPress={() => openDatePicker({ scope: 'new', field: 'endDate' })}>
-                    <Ionicons name="calendar-outline" size={16} color="#0f4fa8" />
+                    <Ionicons name="calendar-outline" size={16} color={theme.colors.buttonDark} />
                     <Text style={[styles.datePickerText, !endDateDraft && styles.datePickerPlaceholderText]}>
                       {endDateDraft || 'Pick deadline'}
                     </Text>
@@ -564,12 +566,12 @@ export default function PlannerScreen() {
               {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
 
               <LinearGradient
-                colors={['#f3faff', '#84ccff', '#4dacff']}
+                colors={[theme.colors.buttonDark, theme.colors.buttonDark]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.primaryButtonGradient}>
                 <Pressable style={styles.primaryButton} onPress={addTaskFromDraft}>
-                  <Ionicons name="add" size={18} color="#1b3d5a" />
+                  <Ionicons name="add" size={18} color={theme.colors.cardBackground} />
                   <Text style={styles.primaryButtonText}>Create Task</Text>
                 </Pressable>
               </LinearGradient>
@@ -608,7 +610,7 @@ export default function PlannerScreen() {
                   <Ionicons
                     name={item.completed ? 'checkmark-circle' : 'ellipse-outline'}
                     size={24}
-                    color={item.completed ? '#2f8f5b' : isOverdue ? '#c0392b' : '#6a5441'}
+                    color={item.completed ? theme.colors.success : isOverdue ? theme.colors.accent : theme.colors.buttonDark}
                   />
                   <View style={styles.taskTextWrap}>
                     <Text style={[styles.taskTitle, item.completed && styles.completedText]}>{item.title}</Text>
@@ -641,7 +643,7 @@ export default function PlannerScreen() {
                 </Pressable>
 
                 <Pressable style={styles.iconButton} onPress={() => removeTask(item.id)}>
-                  <Ionicons name="trash-outline" size={18} color="#8e4a45" />
+                  <Ionicons name="trash-outline" size={18} color={theme.colors.accent} />
                 </Pressable>
               </View>
 
@@ -659,7 +661,7 @@ export default function PlannerScreen() {
                       field: 'startDate',
                     })
                   }>
-                  <Ionicons name="calendar-outline" size={15} color="#8b7a68" />
+                  <Ionicons name="calendar-outline" size={15} color={theme.colors.buttonDark} />
                   <Text style={[styles.datePickerTextTask, !milestone.startDate && styles.datePickerPlaceholderTextTask]}>
                     {milestone.startDate || 'Start date'}
                   </Text>
@@ -673,7 +675,7 @@ export default function PlannerScreen() {
                       field: 'endDate',
                     })
                   }>
-                  <Ionicons name="calendar-outline" size={15} color="#8b7a68" />
+                  <Ionicons name="calendar-outline" size={15} color={theme.colors.buttonDark} />
                   <Text style={[styles.datePickerTextTask, !milestone.endDate && styles.datePickerPlaceholderTextTask]}>
                     {milestone.endDate || 'Deadline'}
                   </Text>
@@ -687,14 +689,14 @@ export default function PlannerScreen() {
 
               <View style={styles.dailyScheduleRow}>
                 <View style={styles.dailyScheduleLabelWrap}>
-                  <Ionicons name="repeat-outline" size={17} color="#0f4fa8" />
+                    <Ionicons name="repeat-outline" size={17} color={theme.colors.buttonDark} />
                   <Text style={styles.dailyScheduleLabel}>Repeat daily</Text>
                 </View>
                 <Switch
                   value={milestone.isDaily}
                   onValueChange={(value) => setMilestoneDraft(item.id, 'isDaily', value)}
-                  trackColor={{ false: '#cbd5df', true: '#88b9e3' }}
-                  thumbColor={milestone.isDaily ? '#2368a7' : '#f4f3f4'}
+                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
+                  thumbColor={milestone.isDaily ? theme.colors.buttonDark : theme.colors.cardBackground}
                 />
               </View>
               {milestone.isDaily ? (
@@ -702,7 +704,7 @@ export default function PlannerScreen() {
                   <Pressable
                     style={styles.dailyAppInputRow}
                     onPress={() => void openAppPicker({ scope: 'milestone', taskId: item.id })}>
-                    <Ionicons name="apps-outline" size={17} color="#0f4fa8" />
+                    <Ionicons name="apps-outline" size={17} color={theme.colors.buttonDark} />
                     <View style={styles.dailyAppPickerTextWrap}>
                       <Text style={styles.dailyAppPickerTitle}>
                         {milestone.appName || 'Choose installed app'}
@@ -711,12 +713,12 @@ export default function PlannerScreen() {
                         {milestone.appPackageName || 'Optional · habit without an app'}
                       </Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color="#66839e" />
+                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
                   </Pressable>
                   <Pressable style={styles.dailyTimeButtonTask} onPress={() => openTimePicker({ scope: 'milestone', taskId: item.id })}>
-                    <Ionicons name="time-outline" size={16} color="#0f4fa8" />
+                    <Ionicons name="time-outline" size={16} color={theme.colors.buttonDark} />
                     <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(milestone.dailyTime)}</Text>
-                    <Ionicons name="chevron-forward" size={15} color="#66839e" />
+                    <Ionicons name="chevron-forward" size={15} color={theme.colors.textSecondary} />
                   </Pressable>
                 </>
               ) : null}
@@ -728,14 +730,14 @@ export default function PlannerScreen() {
                 <TextInput
                   style={styles.subtaskInput}
                   placeholder="Add subtask..."
-                  placeholderTextColor="#b09a87"
+                  placeholderTextColor={theme.colors.textSecondary}
                   value={subtaskDrafts[item.id] ?? ''}
                   onChangeText={(text) => setSubtaskDraft(item.id, text)}
                   onSubmitEditing={() => addSubtaskFromDraft(item.id)}
                   returnKeyType="done"
                 />
                 <Pressable style={styles.miniButton} onPress={() => addSubtaskFromDraft(item.id)}>
-                  <Ionicons name="add" size={16} color="#3f2f1d" />
+                  <Ionicons name="add" size={16} color={theme.colors.buttonDark} />
                 </Pressable>
               </View>
 
@@ -745,12 +747,12 @@ export default function PlannerScreen() {
                     <Ionicons
                       name={subtask.completed ? 'checkbox' : 'square-outline'}
                       size={18}
-                      color={subtask.completed ? '#2f8f5b' : '#8b7a68'}
+                      color={subtask.completed ? theme.colors.success : theme.colors.textSecondary}
                     />
                     <Text style={[styles.subtaskText, subtask.completed && styles.completedText]}>{subtask.title}</Text>
                   </Pressable>
                   <Pressable style={styles.subtaskRemove} onPress={() => removeSubtask(item.id, subtask.id)}>
-                    <Ionicons name="close" size={16} color="#8e4a45" />
+                    <Ionicons name="close" size={16} color={theme.colors.accent} />
                   </Pressable>
                 </View>
               ))}
@@ -780,7 +782,7 @@ export default function PlannerScreen() {
                 </Text>
               </View>
               <Pressable style={styles.dateModalClose} onPress={() => setActiveDatePicker(null)}>
-                <Ionicons name="close" size={20} color="#344861" />
+                <Ionicons name="close" size={20} color={theme.colors.buttonDark} />
               </Pressable>
             </View>
 
@@ -790,10 +792,10 @@ export default function PlannerScreen() {
               </Text>
               <View style={styles.dateModalMonthControls}>
                 <Pressable accessibilityLabel="Previous month" style={styles.dateModalMonthButton} onPress={() => movePickerMonth(-1)}>
-                  <Ionicons name="chevron-back" size={18} color="#344861" />
+                  <Ionicons name="chevron-back" size={18} color={theme.colors.buttonDark} />
                 </Pressable>
                 <Pressable accessibilityLabel="Next month" style={styles.dateModalMonthButton} onPress={() => movePickerMonth(1)}>
-                  <Ionicons name="chevron-forward" size={18} color="#344861" />
+                  <Ionicons name="chevron-forward" size={18} color={theme.colors.buttonDark} />
                 </Pressable>
               </View>
             </View>
@@ -823,7 +825,7 @@ export default function PlannerScreen() {
                         </Text>
                         <View style={styles.datePickerDots}>
                           {occupiedTasks.slice(0, 3).map((task) => (
-                            <View key={task.id} style={[styles.datePickerDot, { backgroundColor: task.completed ? '#25805a' : '#d66c3d' }]} />
+                            <View key={task.id} style={[styles.datePickerDot, { backgroundColor: task.completed ? theme.colors.success : theme.colors.accent }]} />
                           ))}
                         </View>
                       </>
@@ -835,7 +837,7 @@ export default function PlannerScreen() {
 
             <View style={styles.occupiedHint}>
               <View style={styles.occupiedHintHeader}>
-                <Ionicons name="information-circle-outline" size={18} color="#2368a7" />
+                <Ionicons name="information-circle-outline" size={18} color={theme.colors.buttonDark} />
                 <Text style={styles.occupiedHintTitle}>{formatReadableDate(pickerPreviewDate)}</Text>
               </View>
               <Text style={styles.occupiedHintLabel}>
@@ -845,7 +847,7 @@ export default function PlannerScreen() {
                 <ScrollView style={styles.occupiedTaskList} nestedScrollEnabled>
                   {pickerOccupiedTasks.map((task) => (
                     <View key={task.id} style={styles.occupiedTaskRow}>
-                      <View style={[styles.occupiedTaskDot, { backgroundColor: task.completed ? '#25805a' : '#d66c3d' }]} />
+                      <View style={[styles.occupiedTaskDot, { backgroundColor: task.completed ? theme.colors.success : theme.colors.accent }]} />
                       <View style={styles.occupiedTaskTextWrap}>
                         <Text style={styles.occupiedTaskTitle}>{task.title}</Text>
                         <Text style={styles.occupiedTaskDates}>
@@ -868,7 +870,7 @@ export default function PlannerScreen() {
               </Pressable>
               <Pressable style={styles.dateModalConfirm} onPress={applyPickerSelection}>
                 <Text style={styles.dateModalConfirmText}>Use date</Text>
-                <Ionicons name="arrow-forward" size={16} color="#ffffff" />
+                <Ionicons name="arrow-forward" size={16} color={theme.colors.textPrimary} />
               </Pressable>
             </View>
           </View>
@@ -893,16 +895,16 @@ export default function PlannerScreen() {
                 <Text style={styles.appModalTitle}>Choose an installed app</Text>
               </View>
               <Pressable style={styles.dateModalClose} onPress={() => setActiveAppPicker(null)}>
-                <Ionicons name="close" size={20} color="#344861" />
+                <Ionicons name="close" size={20} color={theme.colors.buttonDark} />
               </Pressable>
             </View>
 
             <View style={styles.appSearchRow}>
-              <Ionicons name="search-outline" size={18} color="#688094" />
+              <Ionicons name="search-outline" size={18} color={theme.colors.textSecondary} />
               <TextInput
                 style={styles.appSearchInput}
                 placeholder="Search installed apps"
-                placeholderTextColor="#8293a1"
+                placeholderTextColor={theme.colors.textSecondary}
                 value={appSearchDraft}
                 onChangeText={setAppSearchDraft}
                 autoCapitalize="none"
@@ -911,7 +913,7 @@ export default function PlannerScreen() {
             </View>
 
             <Pressable style={styles.noAppOption} onPress={() => selectInstalledApp(null)}>
-              <Ionicons name="walk-outline" size={20} color="#2368a7" />
+              <Ionicons name="walk-outline" size={20} color={theme.colors.buttonDark} />
               <View style={styles.installedAppTextWrap}>
                 <Text style={styles.installedAppTitle}>Habit without an app</Text>
                 <Text style={styles.installedAppPackage}>For jogging, reading, and similar routines</Text>
@@ -920,7 +922,7 @@ export default function PlannerScreen() {
 
             {isLoadingApps ? (
               <View style={styles.appPickerState}>
-                <ActivityIndicator color="#2368a7" />
+                <ActivityIndicator color={theme.colors.buttonDark} />
                 <Text style={styles.appPickerStateText}>Loading apps on this device...</Text>
               </View>
             ) : appPickerError ? (
@@ -933,13 +935,13 @@ export default function PlannerScreen() {
                     style={styles.installedAppRow}
                     onPress={() => selectInstalledApp(app)}>
                     <View style={styles.installedAppIcon}>
-                      <Ionicons name="phone-portrait-outline" size={18} color="#2368a7" />
+                      <Ionicons name="phone-portrait-outline" size={18} color={theme.colors.buttonDark} />
                     </View>
                     <View style={styles.installedAppTextWrap}>
                       <Text style={styles.installedAppTitle}>{app.name}</Text>
                       <Text style={styles.installedAppPackage}>{app.packageName}</Text>
                     </View>
-                    <Ionicons name="chevron-forward" size={16} color="#8293a1" />
+                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
                   </Pressable>
                 ))}
               </ScrollView>
@@ -956,25 +958,7 @@ export default function PlannerScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f2f7ff',
-  },
-  backdropBubbleOne: {
-    position: 'absolute',
-    width: 220,
-    height: 220,
-    borderRadius: 110,
-    backgroundColor: '#deecff',
-    top: -60,
-    right: -70,
-  },
-  backdropBubbleTwo: {
-    position: 'absolute',
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    backgroundColor: '#d5e8ff',
-    bottom: 40,
-    left: -60,
+    backgroundColor: theme.colors.background,
   },
   content: {
     paddingHorizontal: 16,
@@ -984,10 +968,139 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 10,
   },
+  heroCard: {
+    padding: 20,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 28,
+    shadowColor: theme.colors.canvas,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 4,
+  },
+  profileRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 10,
+  },
+  activeUserPill: {
+    flex: 1,
+    minHeight: 48,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    backgroundColor: '#EAF7FA',
+    borderRadius: theme.borderRadius.full,
+  },
+  avatarMark: {
+    width: 32,
+    height: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: theme.borderRadius.full,
+  },
+  avatarInitial: {
+    color: theme.colors.buttonDark,
+    fontSize: 14,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  activeUserTextWrap: {
+    flex: 1,
+  },
+  activeUserLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 9,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  activeUserName: {
+    marginTop: 1,
+    color: theme.colors.textPrimary,
+    fontSize: 12,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  profileButton: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    paddingHorizontal: 12,
+    backgroundColor: theme.colors.cardBackground,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: theme.borderRadius.full,
+  },
+  profileButtonText: {
+    color: theme.colors.buttonDark,
+    fontSize: 11,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
   headerTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 4,
+    backgroundColor: theme.colors.buttonDark,
+    borderRadius: theme.borderRadius.full,
+  },
+  segmentButton: {
+    minHeight: 32,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 13,
+    borderRadius: theme.borderRadius.full,
+  },
+  segmentButtonActive: {
+    backgroundColor: theme.colors.cardBackground,
+  },
+  segmentText: {
+    color: theme.colors.cardBackground,
+    fontSize: 11,
+    fontFamily: 'Nunito_700Bold',
+  },
+  segmentTextActive: {
+    color: theme.colors.buttonDark,
+  },
+  scheduledToolbar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 20,
+    marginBottom: 8,
+  },
+  scheduledTitle: {
+    color: theme.colors.textPrimary,
+    fontSize: 18,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  scheduledCount: {
+    marginTop: 1,
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+  addTaskButton: {
+    minHeight: 40,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 6,
+    paddingHorizontal: 16,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.full,
+  },
+  addTaskButtonText: {
+    color: theme.colors.textPrimary,
+    fontSize: 12,
+    fontFamily: 'Nunito_800ExtraBold',
   },
   userIconButton: {
     width: 40,
@@ -995,31 +1108,33 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'rgba(15, 79, 168, 0.1)',
+    backgroundColor: 'rgba(255, 255, 255, 0.72)',
     borderWidth: 1,
-    borderColor: 'rgba(15, 79, 168, 0.2)',
+    borderColor: 'rgba(255, 255, 255, 0.9)',
   },
   eyebrow: {
-    color: '#6f6f6f',
-    fontWeight: '700',
-    letterSpacing: 0.5,
+    color: theme.colors.buttonDark,
+    fontSize: 11,
+    fontFamily: 'Nunito_800ExtraBold',
+    letterSpacing: 1,
   },
   title: {
-    fontSize: 30,
-    fontWeight: '800',
-    color: '#1f1f1f',
+    fontSize: 26,
+    fontFamily: 'Nunito_800ExtraBold',
+    color: theme.colors.textPrimary,
     marginTop: 4,
   },
   subtitle: {
     marginTop: 6,
-    color: '#666666',
+    color: theme.colors.buttonDark,
     fontSize: 14,
+    fontFamily: 'Nunito_600SemiBold',
   },
   assignTitle: {
     marginTop: 2,
-    color: '#0f4fa8',
+    color: theme.colors.buttonDark,
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: 'Nunito_800ExtraBold',
   },
   assignChipRow: {
     flexDirection: 'row',
@@ -1030,58 +1145,58 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    backgroundColor: '#eef6ff',
+    backgroundColor: '#F3F8FA',
     borderWidth: 1,
-    borderColor: '#c8def3',
+    borderColor: theme.colors.border,
   },
   assignChipSelected: {
-    backgroundColor: 'rgba(15, 79, 168, 0.16)',
-    borderColor: 'rgba(15, 79, 168, 0.42)',
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
   },
   assignChipText: {
-    color: '#0f4fa8',
+    color: theme.colors.textSecondary,
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: 'Nunito_700Bold',
   },
   assignChipTextSelected: {
-    color: '#08306b',
+    color: theme.colors.textPrimary,
   },
   statsRow: {
-    marginTop: 14,
+    marginTop: 18,
     flexDirection: 'row',
-    gap: 10,
+    gap: 8,
   },
   statCard: {
     flex: 1,
-    borderRadius: 14,
-    backgroundColor: 'rgba(46, 148, 255, 0.14)',
-    paddingVertical: 10,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255, 255, 255, 0.74)',
+    paddingVertical: 12,
     alignItems: 'center',
     borderWidth: 1,
-    borderColor: 'rgba(46, 148, 255, 0.28)',
+    borderColor: 'rgba(255, 255, 255, 0.9)',
   },
   statCardTotal: {
-    backgroundColor: 'rgba(27, 125, 255, 0.20)',
-    borderColor: 'rgba(27, 125, 255, 0.42)',
+    backgroundColor: 'rgba(255, 255, 255, 0.74)',
+    borderColor: 'rgba(255, 255, 255, 0.9)',
   },
   statCardCompleted: {
-    backgroundColor: 'rgba(66, 164, 255, 0.18)',
-    borderColor: 'rgba(66, 164, 255, 0.34)',
+    backgroundColor: 'rgba(255, 255, 255, 0.74)',
+    borderColor: 'rgba(255, 255, 255, 0.9)',
   },
   statCardDeadline: {
-    backgroundColor: 'rgba(20, 138, 255, 0.22)',
-    borderColor: 'rgba(20, 138, 255, 0.46)',
+    backgroundColor: 'rgba(255, 255, 255, 0.74)',
+    borderColor: 'rgba(255, 255, 255, 0.9)',
   },
   statNumber: {
     fontSize: 20,
-    fontWeight: '800',
-    color: '#0f4fa8',
+    fontFamily: 'Nunito_800ExtraBold',
+    color: theme.colors.textPrimary,
   },
   statLabel: {
     marginTop: 2,
-    fontSize: 12,
-    fontWeight: '600',
-    color: '#13539f',
+    fontSize: 11,
+    fontFamily: 'Nunito_700Bold',
+    color: theme.colors.textSecondary,
   },
   overdueCard: {
     marginTop: 12,
@@ -1124,7 +1239,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   overdueChip: {
-    borderRadius: 999,
+    borderRadius: theme.borderRadius.full,
     paddingHorizontal: 10,
     paddingVertical: 6,
     backgroundColor: 'rgba(220, 38, 38, 0.16)',
@@ -1137,21 +1252,29 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   composerCard: {
-    marginTop: 14,
-    borderRadius: 18,
-    backgroundColor: '#f7fbff',
+    marginTop: 16,
+    borderRadius: 24,
+    backgroundColor: theme.colors.cardBackground,
     borderWidth: 1,
-    borderColor: '#d5e4f2',
-    padding: 12,
-    gap: 8,
+    borderColor: theme.colors.border,
+    padding: 16,
+    gap: 10,
+    shadowColor: theme.colors.canvas,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 0.06,
+    shadowRadius: 14,
+    elevation: 2,
   },
   taskInput: {
-    borderRadius: 12,
-    backgroundColor: '#f1f1f1',
+    minHeight: 48,
+    borderRadius: 16,
+    backgroundColor: '#F7FBFC',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#1f1f1f',
-    fontWeight: '600',
+    color: theme.colors.textPrimary,
+    fontFamily: 'Nunito_600SemiBold',
   },
   milestoneRow: {
     flexDirection: 'row',
@@ -1160,35 +1283,35 @@ const styles = StyleSheet.create({
   datePickerButton: {
     flex: 1,
     minHeight: 42,
-    borderRadius: 10,
-    backgroundColor: '#f1f1f1',
+    borderRadius: 16,
+    backgroundColor: '#F7FBFC',
     paddingHorizontal: 10,
     paddingVertical: 9,
     borderWidth: 1,
-    borderColor: '#d6d6d6',
+    borderColor: theme.colors.border,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
   datePickerButtonEmpty: {
-    backgroundColor: '#f6f8fb',
+    backgroundColor: theme.colors.cardBackground,
   },
   datePickerText: {
-    color: '#1f1f1f',
-    fontWeight: '600',
+    color: theme.colors.textPrimary,
+    fontFamily: 'Nunito_600SemiBold',
     flex: 1,
   },
   datePickerPlaceholderText: {
-    color: '#7c7c7c',
-    fontWeight: '500',
+    color: theme.colors.textSecondary,
+    fontFamily: 'Nunito_500Medium',
   },
   datePickerButtonTask: {
     flex: 1,
     minHeight: 38,
     borderRadius: 10,
-    backgroundColor: '#f1f1f1',
+    backgroundColor: '#F7FBFC',
     borderWidth: 1,
-    borderColor: '#d6d6d6',
+    borderColor: theme.colors.border,
     paddingHorizontal: 10,
     paddingVertical: 8,
     flexDirection: 'row',
@@ -1196,28 +1319,33 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   datePickerTextTask: {
-    color: '#1f1f1f',
+    color: theme.colors.textPrimary,
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: 'Nunito_600SemiBold',
     flex: 1,
   },
   datePickerPlaceholderTextTask: {
-    color: '#7c7c7c',
-    fontWeight: '500',
+    color: theme.colors.textSecondary,
+    fontFamily: 'Nunito_500Medium',
   },
   dateModalBackdrop: {
     flex: 1,
     justifyContent: 'center',
     padding: 18,
-    backgroundColor: 'rgba(18, 38, 54, 0.48)',
+    backgroundColor: 'rgba(57, 83, 91, 0.48)',
   },
   dateModalPanel: {
     maxHeight: '90%',
     padding: 16,
     backgroundColor: '#ffffff',
-    borderRadius: 12,
+    borderRadius: theme.borderRadius.lg,
     borderWidth: 1,
-    borderColor: '#d5e1e9',
+    borderColor: theme.colors.border,
+    shadowColor: '#000000',
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
   dateModalHeader: {
     flexDirection: 'row',
@@ -1230,16 +1358,16 @@ const styles = StyleSheet.create({
     paddingRight: 10,
   },
   dateModalEyebrow: {
-    color: '#688094',
+    color: theme.colors.textSecondary,
     fontSize: 10,
-    fontWeight: '800',
+    fontFamily: 'Nunito_800ExtraBold',
     letterSpacing: 1,
   },
   dateModalTitle: {
     marginTop: 4,
-    color: '#20394f',
+    color: theme.colors.textPrimary,
     fontSize: 19,
-    fontWeight: '800',
+    fontFamily: 'Nunito_800ExtraBold',
     textTransform: 'capitalize',
   },
   dateModalClose: {
@@ -1247,8 +1375,8 @@ const styles = StyleSheet.create({
     height: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#eff4f7',
-    borderRadius: 7,
+    backgroundColor: '#F3F8FA',
+    borderRadius: theme.borderRadius.full,
   },
   dateModalMonthRow: {
     flexDirection: 'row',
@@ -1257,9 +1385,9 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   dateModalMonthTitle: {
-    color: '#20394f',
+    color: theme.colors.textPrimary,
     fontSize: 15,
-    fontWeight: '800',
+    fontFamily: 'Nunito_800ExtraBold',
   },
   dateModalMonthControls: {
     flexDirection: 'row',
@@ -1270,8 +1398,8 @@ const styles = StyleSheet.create({
     height: 32,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#eff4f7',
-    borderRadius: 7,
+    backgroundColor: '#F3F8FA',
+    borderRadius: theme.borderRadius.full,
   },
   datePickerWeekdays: {
     flexDirection: 'row',
@@ -1279,9 +1407,9 @@ const styles = StyleSheet.create({
   },
   datePickerWeekday: {
     width: `${100 / 7}%`,
-    color: '#8392a0',
+    color: theme.colors.textSecondary,
     fontSize: 10,
-    fontWeight: '800',
+    fontFamily: 'Nunito_800ExtraBold',
     textAlign: 'center',
   },
   datePickerGrid: {
@@ -1296,19 +1424,19 @@ const styles = StyleSheet.create({
     borderRadius: 7,
   },
   datePickerDaySelected: {
-    backgroundColor: '#dcecf7',
+    backgroundColor: theme.colors.primary,
   },
   datePickerDayNumber: {
-    color: '#34495b',
+    color: theme.colors.textSecondary,
     fontSize: 12,
-    fontWeight: '600',
+    fontFamily: 'Nunito_600SemiBold',
   },
   datePickerDayToday: {
-    color: '#176ba8',
-    fontWeight: '900',
+    color: theme.colors.buttonDark,
+    fontFamily: 'Nunito_900Black',
   },
   datePickerDayNumberSelected: {
-    color: '#135a91',
+    color: theme.colors.textPrimary,
   },
   datePickerDots: {
     height: 5,
@@ -1324,8 +1452,8 @@ const styles = StyleSheet.create({
   occupiedHint: {
     marginTop: 11,
     padding: 10,
-    backgroundColor: '#f1f6fa',
-    borderRadius: 8,
+    backgroundColor: '#F7FBFC',
+    borderRadius: 16,
   },
   occupiedHintHeader: {
     flexDirection: 'row',
@@ -1334,15 +1462,15 @@ const styles = StyleSheet.create({
   },
   occupiedHintTitle: {
     flex: 1,
-    color: '#20394f',
+    color: theme.colors.textPrimary,
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: 'Nunito_800ExtraBold',
   },
   occupiedHintLabel: {
     marginTop: 5,
-    color: '#687d8e',
+    color: theme.colors.textSecondary,
     fontSize: 11,
-    fontWeight: '600',
+    fontFamily: 'Nunito_600SemiBold',
   },
   occupiedTaskList: {
     maxHeight: 88,
@@ -1363,14 +1491,15 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   occupiedTaskTitle: {
-    color: '#34495b',
+    color: theme.colors.textPrimary,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: 'Nunito_700Bold',
   },
   occupiedTaskDates: {
     marginTop: 1,
-    color: '#788b9b',
+    color: theme.colors.textSecondary,
     fontSize: 10,
+    fontFamily: 'Nunito_500Medium',
   },
   dateModalActions: {
     flexDirection: 'row',
@@ -1383,13 +1512,13 @@ const styles = StyleSheet.create({
     minHeight: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#eff4f7',
-    borderRadius: 7,
+    backgroundColor: '#F3F8FA',
+    borderRadius: theme.borderRadius.full,
   },
   dateModalCancelText: {
-    color: '#526577',
+    color: theme.colors.buttonDark,
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: 'Nunito_700Bold',
   },
   dateModalConfirm: {
     minWidth: 108,
@@ -1399,45 +1528,49 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 6,
     paddingHorizontal: 12,
-    backgroundColor: '#2368a7',
-    borderRadius: 7,
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.full,
   },
   dateModalConfirmText: {
-    color: '#ffffff',
+    color: theme.colors.textPrimary,
     fontSize: 12,
-    fontWeight: '800',
+    fontFamily: 'Nunito_800ExtraBold',
   },
   errorText: {
-    color: '#9a4b3b',
-    fontWeight: '600',
+    color: theme.colors.accent,
+    fontFamily: 'Nunito_600SemiBold',
     fontSize: 12,
   },
   primaryButtonGradient: {
-    borderRadius: 12,
+    borderRadius: theme.borderRadius.full,
   },
   primaryButton: {
     flexDirection: 'row',
     gap: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: 12,
+    minHeight: 52,
+    borderRadius: theme.borderRadius.full,
     backgroundColor: 'transparent',
     paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.6)',
   },
   primaryButtonText: {
-    color: '#1b3d5a',
-    fontWeight: '800',
+    color: theme.colors.cardBackground,
+    fontSize: 16,
+    fontFamily: 'Nunito_800ExtraBold',
   },
   taskCard: {
-    marginTop: 12,
-    borderRadius: 18,
-    backgroundColor: '#f7fbff',
+    marginTop: 14,
+    borderRadius: 24,
+    backgroundColor: theme.colors.cardBackground,
     borderWidth: 1,
-    borderColor: '#d5e4f2',
-    padding: 12,
+    borderColor: theme.colors.border,
+    padding: 16,
+    shadowColor: theme.colors.canvas,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 1,
   },
   taskCardOverdue: {
     backgroundColor: 'rgba(220, 38, 38, 0.08)',
@@ -1459,19 +1592,19 @@ const styles = StyleSheet.create({
   },
   taskTitle: {
     fontSize: 17,
-    fontWeight: '800',
-    color: '#1f1f1f',
+    fontFamily: 'Nunito_800ExtraBold',
+    color: theme.colors.textPrimary,
   },
   taskMeta: {
     marginTop: 3,
-    color: '#666666',
-    fontWeight: '600',
+    color: theme.colors.textSecondary,
+    fontFamily: 'Nunito_600SemiBold',
     fontSize: 12,
   },
   taskOwnerText: {
     marginTop: 2,
-    color: '#3f6ea8',
-    fontWeight: '700',
+    color: theme.colors.textSecondary,
+    fontFamily: 'Nunito_700Bold',
     fontSize: 11,
   },
   dailyAppInputRow: {
@@ -1480,10 +1613,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 11,
-    backgroundColor: '#f3f8fc',
+    backgroundColor: '#F7FBFC',
     borderWidth: 1,
-    borderColor: '#d3e2ee',
-    borderRadius: 9,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
   },
   dailyAppPickerTextWrap: {
     flex: 1,
@@ -1491,28 +1624,34 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
   },
   dailyAppPickerTitle: {
-    color: '#20394f',
+    color: theme.colors.textPrimary,
     fontSize: 13,
-    fontWeight: '600',
+    fontFamily: 'Nunito_600SemiBold',
   },
   dailyAppPickerSubtitle: {
     marginTop: 2,
-    color: '#71849a',
+    color: theme.colors.textSecondary,
     fontSize: 10,
+    fontFamily: 'Nunito_500Medium',
   },
   appModalBackdrop: {
     flex: 1,
     justifyContent: 'center',
     padding: 18,
-    backgroundColor: 'rgba(18, 38, 54, 0.48)',
+    backgroundColor: 'rgba(57, 83, 91, 0.48)',
   },
   appModalPanel: {
     maxHeight: '85%',
     padding: 16,
-    backgroundColor: '#ffffff',
-    borderRadius: 12,
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: theme.borderRadius.lg,
     borderWidth: 1,
-    borderColor: '#d5e1e9',
+    borderColor: theme.colors.border,
+    shadowColor: '#000000',
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
   },
   appModalHeader: {
     flexDirection: 'row',
@@ -1526,9 +1665,9 @@ const styles = StyleSheet.create({
   },
   appModalTitle: {
     marginTop: 4,
-    color: '#20394f',
+    color: theme.colors.textPrimary,
     fontSize: 19,
-    fontWeight: '800',
+    fontFamily: 'Nunito_800ExtraBold',
   },
   appSearchRow: {
     minHeight: 42,
@@ -1536,16 +1675,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 11,
-    backgroundColor: '#f1f6fa',
+    backgroundColor: '#F7FBFC',
     borderWidth: 1,
-    borderColor: '#dce6ed',
-    borderRadius: 8,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
   },
   appSearchInput: {
     flex: 1,
     paddingVertical: 8,
-    color: '#20394f',
+    color: theme.colors.textPrimary,
     fontSize: 13,
+    fontFamily: 'Nunito_500Medium',
   },
   noAppOption: {
     minHeight: 54,
@@ -1554,8 +1694,8 @@ const styles = StyleSheet.create({
     gap: 10,
     marginTop: 10,
     paddingHorizontal: 10,
-    backgroundColor: '#edf5fb',
-    borderRadius: 8,
+    backgroundColor: '#EAF7FA',
+    borderRadius: 16,
   },
   installedAppsList: {
     flexGrow: 0,
@@ -1568,28 +1708,29 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingHorizontal: 8,
     borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: '#dce6ed',
+    borderBottomColor: theme.colors.border,
   },
   installedAppIcon: {
     width: 34,
     height: 34,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#e3eff8',
-    borderRadius: 8,
+    backgroundColor: '#EAF7FA',
+    borderRadius: 12,
   },
   installedAppTextWrap: {
     flex: 1,
   },
   installedAppTitle: {
-    color: '#20394f',
+    color: theme.colors.textPrimary,
     fontSize: 13,
-    fontWeight: '700',
+    fontFamily: 'Nunito_700Bold',
   },
   installedAppPackage: {
     marginTop: 2,
-    color: '#788b9b',
+    color: theme.colors.textSecondary,
     fontSize: 10,
+    fontFamily: 'Nunito_500Medium',
   },
   appPickerState: {
     minHeight: 80,
@@ -1599,14 +1740,16 @@ const styles = StyleSheet.create({
   },
   appPickerStateText: {
     paddingVertical: 16,
-    color: '#788b9b',
+    color: theme.colors.textSecondary,
     fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold',
     textAlign: 'center',
   },
   appPickerError: {
     paddingVertical: 16,
-    color: '#9a4b3b',
+    color: theme.colors.accent,
     fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold',
     textAlign: 'center',
   },
   dailyTimeButton: {
@@ -1615,10 +1758,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 8,
     paddingHorizontal: 11,
-    backgroundColor: '#eef6ff',
+    backgroundColor: '#F7FBFC',
     borderWidth: 1,
-    borderColor: '#c8def3',
-    borderRadius: 9,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
   },
   dailyTimeButtonTask: {
     minHeight: 38,
@@ -1627,16 +1770,16 @@ const styles = StyleSheet.create({
     gap: 8,
     marginTop: 7,
     paddingHorizontal: 10,
-    backgroundColor: '#eef6ff',
+    backgroundColor: '#F7FBFC',
     borderWidth: 1,
-    borderColor: '#c8def3',
-    borderRadius: 9,
+    borderColor: theme.colors.border,
+    borderRadius: 16,
   },
   dailyTimeButtonText: {
     flex: 1,
-    color: '#0f4fa8',
+    color: theme.colors.buttonDark,
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: 'Nunito_700Bold',
   },
   dailyScheduleRow: {
     minHeight: 42,
@@ -1645,8 +1788,8 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginTop: 8,
     paddingHorizontal: 10,
-    backgroundColor: '#f3f8fc',
-    borderRadius: 8,
+    backgroundColor: '#F7FBFC',
+    borderRadius: 16,
   },
   dailyScheduleLabelWrap: {
     flexDirection: 'row',
@@ -1654,9 +1797,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   dailyScheduleLabel: {
-    color: '#34495b',
+    color: theme.colors.textPrimary,
     fontSize: 12,
-    fontWeight: '700',
+    fontFamily: 'Nunito_700Bold',
   },
   badgeRow: {
     flexDirection: 'row',
@@ -1667,32 +1810,32 @@ const styles = StyleSheet.create({
   badge: {
     paddingHorizontal: 10,
     paddingVertical: 6,
-    borderRadius: 999,
+    borderRadius: theme.borderRadius.full,
     borderWidth: 1,
   },
   badgeNeutral: {
-    backgroundColor: '#f3f3f3',
-    borderColor: '#d6d6d6',
+    backgroundColor: '#F3F8FA',
+    borderColor: theme.colors.border,
   },
   badgeComplete: {
-    backgroundColor: '#efefef',
-    borderColor: '#bdbdbd',
+    backgroundColor: '#EFF8F4',
+    borderColor: '#CDE8DA',
   },
   badgeDeadline: {
-    backgroundColor: '#f6f6f6',
-    borderColor: '#dcdcdc',
+    backgroundColor: '#EAF7FA',
+    borderColor: '#CDECF4',
   },
   badgeOverdue: {
-    backgroundColor: 'rgba(220, 38, 38, 0.14)',
-    borderColor: 'rgba(220, 38, 38, 0.34)',
+    backgroundColor: '#FFF2F0',
+    borderColor: '#F3D0CA',
   },
   badgeText: {
-    color: '#1f1f1f',
+    color: theme.colors.textPrimary,
     fontSize: 11,
-    fontWeight: '700',
+    fontFamily: 'Nunito_700Bold',
   },
   badgeTextOverdue: {
-    color: '#991b1b',
+    color: theme.colors.accent,
   },
   iconButton: {
     width: 30,
@@ -1700,18 +1843,18 @@ const styles = StyleSheet.create({
     borderRadius: 15,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#edf6ff',
+    backgroundColor: '#F3F8FA',
   },
   progressTrack: {
     marginTop: 10,
     height: 8,
     borderRadius: 8,
-    backgroundColor: '#e6e6e6',
+    backgroundColor: theme.colors.border,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#2f8f5b',
+    backgroundColor: theme.colors.success,
   },
   milestoneRowTask: {
     marginTop: 10,
@@ -1722,17 +1865,17 @@ const styles = StyleSheet.create({
   miniButtonWide: {
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#eaf4ff',
+    backgroundColor: '#EAF7FA',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#c6dbef',
+    borderColor: theme.colors.border,
     paddingHorizontal: 10,
   },
   miniButtonText: {
-    color: '#1f1f1f',
-    fontWeight: '700',
+    color: theme.colors.buttonDark,
     fontSize: 12,
+    fontFamily: 'Nunito_700Bold',
   },
   subtaskComposerRow: {
     marginTop: 10,
@@ -1743,22 +1886,23 @@ const styles = StyleSheet.create({
   subtaskInput: {
     flex: 1,
     borderRadius: 10,
-    backgroundColor: '#f1f1f1',
+    backgroundColor: theme.colors.cardBackground,
     borderWidth: 1,
-    borderColor: '#d6d6d6',
+    borderColor: theme.colors.border,
     paddingHorizontal: 10,
     paddingVertical: 8,
-    color: '#1f1f1f',
+    color: theme.colors.textPrimary,
+    fontFamily: 'Nunito_600SemiBold',
   },
   miniButton: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: '#eaf4ff',
+    backgroundColor: '#EAF7FA',
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#c6dbef',
+    borderColor: theme.colors.border,
   },
   subtaskRow: {
     marginTop: 8,
@@ -1766,7 +1910,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     alignItems: 'center',
     borderRadius: 10,
-    backgroundColor: '#f5f9ff',
+    backgroundColor: '#F7FBFC',
     paddingHorizontal: 10,
     paddingVertical: 8,
   },
@@ -1777,27 +1921,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   subtaskText: {
-    color: '#2a2a2a',
-    fontWeight: '600',
+    color: theme.colors.textPrimary,
+    fontFamily: 'Nunito_600SemiBold',
     flexShrink: 1,
   },
   subtaskRemove: {
     width: 22,
     height: 22,
     borderRadius: 11,
-    backgroundColor: '#edf6ff',
+    backgroundColor: '#F3F8FA',
     alignItems: 'center',
     justifyContent: 'center',
   },
   completedText: {
     textDecorationLine: 'line-through',
-    color: '#8a8a8a',
+    color: theme.colors.textMuted,
   },
   emptyState: {
     marginTop: 16,
     textAlign: 'center',
-    color: '#777777',
-    fontWeight: '600',
+    color: theme.colors.textSecondary,
+    fontFamily: 'Nunito_600SemiBold',
   },
   periodRow: {
     flexDirection: 'row',
@@ -1806,7 +1950,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   periodLabel: {
-    color: '#0f4fa8',
+    color: theme.colors.buttonDark,
     fontSize: 12,
     fontWeight: '800',
   },
@@ -1814,33 +1958,33 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
-    backgroundColor: '#eef6ff',
+    backgroundColor: '#F7FBFC',
     borderWidth: 1,
-    borderColor: '#c8def3',
+    borderColor: theme.colors.border,
   },
   periodButtonActive: {
-    backgroundColor: '#0f4fa8',
-    borderColor: '#0f4fa8',
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
   },
   periodButtonText: {
-    color: '#0f4fa8',
-    fontWeight: '700',
+    color: theme.colors.buttonDark,
     fontSize: 12,
+    fontFamily: 'Nunito_700Bold',
   },
   periodButtonTextActive: {
-    color: '#ffffff',
+    color: theme.colors.textPrimary,
   },
   subtaskPeriodBadge: {
-    backgroundColor: '#fff3cd',
+    backgroundColor: '#F8F1E6',
     borderWidth: 1,
-    borderColor: '#ffd700',
-    borderRadius: 6,
+    borderColor: '#E8D8BA',
+    borderRadius: 10,
     paddingHorizontal: 10,
     paddingVertical: 6,
   },
   subtaskPeriodBadgeText: {
-    color: '#856404',
-    fontWeight: '700',
+    color: theme.colors.buttonDark,
     fontSize: 11,
+    fontFamily: 'Nunito_700Bold',
   },
 });

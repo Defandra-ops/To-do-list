@@ -4,6 +4,7 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { Task, useTodoStore } from '@/components/TodoStore';
+import { theme } from '@/constants/Colors';
 
 const toIsoDate = (date: Date) =>
   `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
@@ -31,11 +32,11 @@ const occursOnDate = (task: Task, date: string) => {
 };
 
 const statusColor = (status: string) => {
-  if (status === 'Overdue') return '#c24135';
-  if (status === 'Due soon') return '#c07813';
-  if (status === 'Completed') return '#25805a';
-  if (status === 'Upcoming') return '#65748b';
-  return '#2470b5';
+  if (status === 'Overdue') return theme.colors.accent;
+  if (status === 'Due soon') return theme.colors.warning;
+  if (status === 'Completed') return theme.colors.success;
+  if (status === 'Upcoming') return theme.colors.textSecondary;
+  return theme.colors.buttonDark;
 };
 
 const formatDate = (date: string) =>
@@ -116,7 +117,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
             {task.appName ? <Text style={styles.taskMeta}>{task.appName}</Text> : null}
         </View>
         <Text style={[styles.statusText, { color: statusColor(status) }]}>{status}</Text>
-        <Ionicons name="chevron-forward" size={16} color="#8293a1" />
+        <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
       </Pressable>
     );
   };
@@ -138,7 +139,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
             <Text style={styles.title}>{embedded ? 'Date picker' : 'Calendar'}</Text>
           </View>
           {!embedded ? <View style={styles.todayMark}>
-            <Ionicons name="notifications-outline" size={17} color="#2368a7" />
+            <Ionicons name="notifications-outline" size={17} color={theme.colors.buttonDark} />
             <Text style={styles.todayMarkText}>{dueSoonTasks.length + overdueTasks.length} alerts</Text>
           </View> : null}
         </View>
@@ -167,10 +168,10 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
             <Text style={styles.monthTitle}>{month.toLocaleDateString('en', { month: 'long', year: 'numeric' })}</Text>
             <View style={styles.monthControls}>
               <Pressable accessibilityLabel="Previous month" style={styles.monthButton} onPress={() => changeMonth(-1)}>
-                <Ionicons name="chevron-back" size={19} color="#344861" />
+                <Ionicons name="chevron-back" size={19} color={theme.colors.buttonDark} />
               </Pressable>
               <Pressable accessibilityLabel="Next month" style={styles.monthButton} onPress={() => changeMonth(1)}>
-                <Ionicons name="chevron-forward" size={19} color="#344861" />
+                <Ionicons name="chevron-forward" size={19} color={theme.colors.buttonDark} />
               </Pressable>
             </View>
           </View>
@@ -206,7 +207,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                         {dayTasks.slice(0, 3).map((task) => (
                           <View
                             key={task.id}
-                            style={[styles.dayDot, { backgroundColor: task.completed ? '#25805a' : task.endDate === date ? '#d66c3d' : '#3984bd' }]}
+                            style={[styles.dayDot, { backgroundColor: task.completed ? theme.colors.success : task.endDate === date ? theme.colors.accent : theme.colors.primary }]}
                           />
                         ))}
                       </View>
@@ -218,9 +219,9 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
           </View>
 
           <View style={styles.legendRow}>
-            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#3984bd' }]} /><Text style={styles.legendText}>In progress</Text></View>
-            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#d66c3d' }]} /><Text style={styles.legendText}>Deadline</Text></View>
-            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: '#25805a' }]} /><Text style={styles.legendText}>Completed</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: theme.colors.primary }]} /><Text style={styles.legendText}>In progress</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: theme.colors.accent }]} /><Text style={styles.legendText}>Deadline</Text></View>
+            <View style={styles.legendItem}><View style={[styles.legendDot, { backgroundColor: theme.colors.success }]} /><Text style={styles.legendText}>Completed</Text></View>
           </View>
         </View>
 
@@ -285,14 +286,14 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                   setIsDateModalVisible(false);
                   setModalTask(null);
                 }}>
-                <Ionicons name="close" size={21} color="#34495b" />
+                <Ionicons name="close" size={21} color={theme.colors.buttonDark} />
               </Pressable>
             </View>
 
             {modalTask ? (
               <View style={styles.detailBody}>
                 <View style={styles.detailLine}>
-                  <Ionicons name="time-outline" size={18} color="#2368a7" />
+                  <Ionicons name="time-outline" size={18} color={theme.colors.buttonDark} />
                   <View style={styles.detailTextWrap}>
                     <Text style={styles.detailLabel}>Time</Text>
                     <Text style={styles.detailValue}>
@@ -301,7 +302,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                   </View>
                 </View>
                 <View style={styles.detailLine}>
-                  <Ionicons name="calendar-outline" size={18} color="#2368a7" />
+                  <Ionicons name="calendar-outline" size={18} color={theme.colors.buttonDark} />
                   <View style={styles.detailTextWrap}>
                     <Text style={styles.detailLabel}>Occupies these dates</Text>
                     <Text style={styles.detailValue}>
@@ -356,65 +357,65 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f1f6fa' },
+  container: { flex: 1, backgroundColor: theme.colors.background },
   content: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 36 },
   embeddedContainer: { flex: 0, backgroundColor: 'transparent' },
   embeddedContent: { paddingHorizontal: 0, paddingTop: 0, paddingBottom: 0 },
-  pickerHint: { marginTop: -9, marginBottom: 12, color: '#687a89', fontSize: 11, lineHeight: 16 },
+  pickerHint: { marginTop: -9, marginBottom: 12, color: theme.colors.textSecondary, fontSize: 12, lineHeight: 18, fontFamily: 'Nunito_500Medium' },
   headingRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 },
-  eyebrow: { color: '#53718c', fontSize: 11, fontWeight: '800', letterSpacing: 1 },
-  title: { marginTop: 3, color: '#18344e', fontSize: 29, fontWeight: '800' },
-  todayMark: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 10, paddingVertical: 8, backgroundColor: '#e3eff8', borderRadius: 8 },
-  todayMarkText: { color: '#2368a7', fontSize: 12, fontWeight: '700' },
+  eyebrow: { color: theme.colors.buttonDark, fontSize: 11, fontWeight: '800', fontFamily: 'Nunito_800ExtraBold' },
+  title: { marginTop: 3, color: theme.colors.textPrimary, fontSize: 26, fontWeight: '800', fontFamily: 'Nunito_800ExtraBold' },
+  todayMark: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, paddingVertical: 9, backgroundColor: '#EAF7FA', borderRadius: theme.borderRadius.full },
+  todayMarkText: { color: theme.colors.buttonDark, fontSize: 12, fontWeight: '700', fontFamily: 'Nunito_700Bold' },
   summaryRow: { flexDirection: 'row', gap: 9, marginBottom: 14 },
   summaryItem: { flex: 1, minHeight: 68, justifyContent: 'center', alignItems: 'center', borderRadius: 8, borderWidth: 1 },
-  summaryDue: { backgroundColor: '#fff4e4', borderColor: '#f0d2a1' },
-  summaryOngoing: { backgroundColor: '#e6f1f8', borderColor: '#c1dbea' },
-  summaryOverdue: { backgroundColor: '#fbeae7', borderColor: '#eac4bd' },
-  summaryNumber: { color: '#20394f', fontSize: 20, fontWeight: '800' },
-  summaryLabel: { marginTop: 1, color: '#526577', fontSize: 11, fontWeight: '700' },
-  calendarPanel: { padding: 14, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dce6ed', borderRadius: 8 },
+  summaryDue: { backgroundColor: '#EAF7FA', borderColor: '#CDECF4' },
+  summaryOngoing: { backgroundColor: '#F1F5F7', borderColor: theme.colors.border },
+  summaryOverdue: { backgroundColor: '#FFF2F0', borderColor: '#F3D0CA' },
+  summaryNumber: { color: theme.colors.textPrimary, fontSize: 20, fontWeight: '800', fontFamily: 'Nunito_800ExtraBold' },
+  summaryLabel: { marginTop: 1, color: theme.colors.textSecondary, fontSize: 12, fontWeight: '700', fontFamily: 'Nunito_700Bold' },
+  calendarPanel: { padding: 16, backgroundColor: theme.colors.cardBackground, borderWidth: 1, borderColor: theme.colors.border, borderRadius: theme.borderRadius.lg, shadowColor: '#000000', shadowOpacity: 0.05, shadowRadius: 12, shadowOffset: { width: 0, height: 5 }, elevation: 2 },
   monthHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 },
-  monthTitle: { color: '#20394f', fontSize: 17, fontWeight: '800' },
+  monthTitle: { color: theme.colors.textPrimary, fontSize: 18, fontWeight: '800', fontFamily: 'Nunito_800ExtraBold' },
   monthControls: { flexDirection: 'row', gap: 6 },
-  monthButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', backgroundColor: '#eff4f7', borderRadius: 7 },
+  monthButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F8FA', borderRadius: theme.borderRadius.full },
   weekdays: { flexDirection: 'row', marginBottom: 4 },
-  weekday: { width: `${100 / 7}%`, textAlign: 'center', color: '#8392a0', fontSize: 11, fontWeight: '800' },
+  weekday: { width: `${100 / 7}%`, textAlign: 'center', color: theme.colors.textSecondary, fontSize: 11, fontWeight: '800', fontFamily: 'Nunito_800ExtraBold' },
   daysGrid: { flexDirection: 'row', flexWrap: 'wrap' },
   dayCell: { width: `${100 / 7}%`, height: 43, alignItems: 'center', justifyContent: 'center', borderRadius: 7 },
-  dayCellSelected: { backgroundColor: '#dcecf7' },
-  dayNumber: { color: '#34495b', fontSize: 13, fontWeight: '600' },
-  dayNumberToday: { color: '#176ba8', fontWeight: '900' },
-  dayNumberSelected: { color: '#135a91' },
+  dayCellSelected: { backgroundColor: theme.colors.primary },
+  dayNumber: { color: theme.colors.textSecondary, fontSize: 13, fontWeight: '600', fontFamily: 'Nunito_600SemiBold' },
+  dayNumberToday: { color: theme.colors.buttonDark, fontWeight: '900' },
+  dayNumberSelected: { color: theme.colors.textPrimary },
   dayDots: { height: 5, flexDirection: 'row', gap: 3, marginTop: 2 },
   dayDot: { width: 4, height: 4, borderRadius: 2 },
   legendRow: { flexDirection: 'row', justifyContent: 'center', gap: 16, marginTop: 12 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 5 },
   legendDot: { width: 7, height: 7, borderRadius: 4 },
-  legendText: { color: '#687a89', fontSize: 10, fontWeight: '600' },
+  legendText: { color: theme.colors.textSecondary, fontSize: 11, fontWeight: '600', fontFamily: 'Nunito_600SemiBold' },
   sectionHeader: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between', marginTop: 20, marginBottom: 8 },
-  sectionTitle: { color: '#20394f', fontSize: 16, fontWeight: '800' },
-  sectionCount: { color: '#788b9b', fontSize: 11, fontWeight: '700' },
-  taskRow: { flexDirection: 'row', alignItems: 'center', minHeight: 62, paddingHorizontal: 11, marginBottom: 7, backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#dce6ed', borderRadius: 8 },
+  sectionTitle: { color: theme.colors.textPrimary, fontSize: 18, fontWeight: '800', fontFamily: 'Nunito_800ExtraBold' },
+  sectionCount: { color: theme.colors.textSecondary, fontSize: 12, fontWeight: '700', fontFamily: 'Nunito_700Bold' },
+  taskRow: { flexDirection: 'row', alignItems: 'center', minHeight: 66, paddingHorizontal: 12, marginBottom: 8, backgroundColor: theme.colors.cardBackground, borderWidth: 1, borderColor: theme.colors.border, borderRadius: 16 },
   taskAccent: { width: 4, height: 34, borderRadius: 2, marginRight: 10 },
   taskDetails: { flex: 1, paddingVertical: 9 },
-  taskTitle: { color: '#20394f', fontSize: 13, fontWeight: '700' },
-  taskMeta: { marginTop: 3, color: '#778897', fontSize: 11 },
+  taskTitle: { color: theme.colors.textPrimary, fontSize: 14, fontWeight: '700', fontFamily: 'Nunito_700Bold' },
+  taskMeta: { marginTop: 3, color: theme.colors.textSecondary, fontSize: 12, fontFamily: 'Nunito_500Medium' },
   statusText: { marginLeft: 8, fontSize: 10, fontWeight: '800' },
-  emptyText: { paddingVertical: 12, color: '#788b9b', fontSize: 12 },
+  emptyText: { paddingVertical: 12, color: theme.colors.textSecondary, fontSize: 13, fontFamily: 'Nunito_500Medium' },
   modalBackdrop: { flex: 1, justifyContent: 'center', padding: 20, backgroundColor: 'rgba(18, 38, 54, 0.45)' },
-  modalPanel: { maxHeight: '78%', padding: 18, backgroundColor: '#ffffff', borderRadius: 10, borderWidth: 1, borderColor: '#d5e1e9' },
+  modalPanel: { maxHeight: '78%', padding: 20, backgroundColor: theme.colors.cardBackground, borderRadius: theme.borderRadius.lg, borderWidth: 1, borderColor: theme.colors.border, shadowColor: '#000000', shadowOpacity: 0.08, shadowRadius: 18, shadowOffset: { width: 0, height: 8 }, elevation: 4 },
   modalHeader: { flexDirection: 'row', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 },
   modalHeadingWrap: { flex: 1, paddingRight: 12 },
-  modalEyebrow: { color: '#688094', fontSize: 10, fontWeight: '800', letterSpacing: 1 },
-  modalTitle: { marginTop: 4, color: '#20394f', fontSize: 19, fontWeight: '800' },
-  modalCloseButton: { width: 34, height: 34, alignItems: 'center', justifyContent: 'center', backgroundColor: '#eff4f7', borderRadius: 7 },
+  modalEyebrow: { color: theme.colors.textSecondary, fontSize: 11, fontWeight: '800', fontFamily: 'Nunito_800ExtraBold' },
+  modalTitle: { marginTop: 4, color: theme.colors.textPrimary, fontSize: 20, fontWeight: '800', fontFamily: 'Nunito_800ExtraBold' },
+  modalCloseButton: { width: 36, height: 36, alignItems: 'center', justifyContent: 'center', backgroundColor: '#F3F8FA', borderRadius: theme.borderRadius.full },
   modalTaskList: { flexGrow: 0 },
   modalEmptyText: { paddingVertical: 14, color: '#788b9b', fontSize: 13 },
   detailBody: { gap: 18, paddingTop: 2, paddingBottom: 4 },
   detailLine: { flexDirection: 'row', alignItems: 'flex-start', gap: 11 },
   detailTextWrap: { flex: 1 },
-  detailLabel: { color: '#788b9b', fontSize: 11, fontWeight: '700' },
-  detailValue: { marginTop: 3, color: '#20394f', fontSize: 14, fontWeight: '700' },
-  detailHint: { marginTop: 3, color: '#788b9b', fontSize: 11 },
+  detailLabel: { color: theme.colors.textSecondary, fontSize: 12, fontWeight: '700', fontFamily: 'Nunito_700Bold' },
+  detailValue: { marginTop: 3, color: theme.colors.textPrimary, fontSize: 15, fontWeight: '700', fontFamily: 'Nunito_700Bold' },
+  detailHint: { marginTop: 3, color: theme.colors.textSecondary, fontSize: 12, fontFamily: 'Nunito_500Medium' },
 });

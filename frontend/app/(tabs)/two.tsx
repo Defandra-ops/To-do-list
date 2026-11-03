@@ -5,6 +5,7 @@ import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTodoStore } from '@/components/TodoStore';
+import { theme } from '@/constants/Colors';
 
 export default function UsersScreen() {
   const { users, activeUserId, addUser, setActiveUserId } = useTodoStore();
@@ -20,20 +21,17 @@ export default function UsersScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.bubbleOne} />
-      <View style={styles.bubbleTwo} />
-
       <Text style={styles.title}>User Login</Text>
       <Text style={styles.subtitle}>Create a user or tap one below to log in.</Text>
 
       <LinearGradient
-        colors={['#2a8cff', '#4fa1ff', '#73b6ff']}
+        colors={[theme.colors.primary, theme.colors.primary]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
         style={[styles.panel, styles.heroPanel]}>
         <Text style={styles.panelTitle}>Current User</Text>
         <View style={styles.currentUserRow}>
-          <Ionicons name="person-circle" size={24} color="#ffffff" />
+          <Ionicons name="person-circle" size={24} color={theme.colors.buttonDark} />
           <Text style={styles.currentUserName}>{activeUserName}</Text>
         </View>
       </LinearGradient>
@@ -88,62 +86,45 @@ export default function UsersScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f2f7ff',
+    backgroundColor: theme.colors.background,
     padding: 16,
   },
-  bubbleOne: {
-    position: 'absolute',
-    width: 190,
-    height: 190,
-    borderRadius: 95,
-    backgroundColor: '#deecff',
-    top: -70,
-    left: -45,
-  },
-  bubbleTwo: {
-    position: 'absolute',
-    width: 170,
-    height: 170,
-    borderRadius: 85,
-    backgroundColor: '#d5e8ff',
-    bottom: -50,
-    right: -40,
-  },
   title: {
-    fontSize: 28,
-    fontWeight: '800',
-    color: '#0f4fa8',
+    fontSize: 26,
+    color: theme.colors.textPrimary,
     marginTop: 8,
+    fontFamily: 'Nunito_800ExtraBold',
   },
   subtitle: {
     marginTop: 6,
-    color: '#355f96',
-    fontSize: 14,
+    color: theme.colors.textSecondary,
+    fontSize: 15,
+    fontFamily: 'Nunito_500Medium',
   },
   panel: {
     marginTop: 14,
-    borderRadius: 16,
-    backgroundColor: '#fcfeff',
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.cardBackground,
     borderWidth: 1,
-    borderColor: '#cfe0f3',
+    borderColor: theme.colors.border,
     padding: 14,
-    shadowColor: '#2e6fb8',
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 5 },
+    shadowColor: '#000000',
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
     elevation: 2,
   },
   heroPanel: {
-    borderColor: 'rgba(255,255,255,0.38)',
-    shadowColor: '#1f66b8',
-    shadowOpacity: 0.2,
+    borderColor: '#CDECF4',
+    shadowColor: '#000000',
+    shadowOpacity: 0.08,
     elevation: 4,
   },
   panelTitle: {
-    fontSize: 17,
-    fontWeight: '800',
-    color: '#143f7d',
+    fontSize: 18,
+    color: theme.colors.textPrimary,
     marginBottom: 8,
+    fontFamily: 'Nunito_800ExtraBold',
   },
   currentUserRow: {
     flexDirection: 'row',
@@ -151,9 +132,9 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   currentUserName: {
-    color: '#ffffff',
-    fontWeight: '800',
+    color: theme.colors.textPrimary,
     fontSize: 16,
+    fontFamily: 'Nunito_800ExtraBold',
   },
   inputRow: {
     flexDirection: 'row',
@@ -162,24 +143,24 @@ const styles = StyleSheet.create({
   },
   input: {
     flex: 1,
-    borderRadius: 12,
-    backgroundColor: '#f4f9ff',
+    borderRadius: 16,
+    backgroundColor: theme.colors.cardBackground,
     borderWidth: 1,
-    borderColor: '#aac7ea',
+    borderColor: theme.colors.border,
     paddingHorizontal: 12,
     paddingVertical: 10,
-    color: '#1f1f1f',
-    fontWeight: '600',
+    color: theme.colors.textPrimary,
+    fontFamily: 'Nunito_600SemiBold',
   },
   addButton: {
     width: 40,
     height: 40,
-    borderRadius: 12,
+    borderRadius: 22,
     alignItems: 'center',
     justifyContent: 'center',
     borderWidth: 1,
-    borderColor: '#2c89f7',
-    backgroundColor: '#3f97ff',
+    borderColor: theme.colors.buttonDark,
+    backgroundColor: theme.colors.buttonDark,
   },
   userRow: {
     flexDirection: 'row',
@@ -187,36 +168,36 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingVertical: 10,
     paddingHorizontal: 10,
-    borderRadius: 10,
+    borderRadius: 14,
     borderBottomWidth: 1,
-    borderBottomColor: '#e8eef5',
+    borderBottomColor: theme.colors.border,
   },
   userRowActive: {
-    backgroundColor: 'rgba(29, 125, 255, 0.16)',
+    backgroundColor: '#EAF7FA',
     borderBottomColor: 'transparent',
   },
   userName: {
-    color: '#1e2e43',
-    fontWeight: '700',
+    color: theme.colors.textPrimary,
+    fontFamily: 'Nunito_700Bold',
   },
   userNameActive: {
-    color: '#0f4fa8',
+    color: theme.colors.buttonDark,
   },
   userStatus: {
-    color: '#4a6281',
-    fontWeight: '700',
+    color: theme.colors.textSecondary,
     fontSize: 12,
+    fontFamily: 'Nunito_700Bold',
   },
   userStatusActive: {
-    color: '#0a4a9b',
-    backgroundColor: 'rgba(29, 125, 255, 0.14)',
+    color: theme.colors.buttonDark,
+    backgroundColor: '#EAF7FA',
     paddingHorizontal: 8,
     paddingVertical: 3,
     borderRadius: 999,
   },
   panelBody: {
-    color: '#4f627d',
+    color: theme.colors.textSecondary,
     lineHeight: 21,
-    fontWeight: '500',
+    fontFamily: 'Nunito_500Medium',
   },
 });

@@ -1,5 +1,6 @@
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, Text, View } from 'react-native';
+import { theme } from '@/constants/Colors';
 
 export default function ModalScreen() {
   return (
@@ -32,20 +33,26 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     padding: 18,
-    backgroundColor: '#f7f7f7',
+    backgroundColor: theme.colors.background,
   },
   card: {
-    borderRadius: 18,
+    borderRadius: theme.borderRadius.lg,
     borderWidth: 1,
-    borderColor: '#dcdcdc',
-    backgroundColor: '#ffffff',
+    borderColor: theme.colors.border,
+    backgroundColor: theme.colors.cardBackground,
     padding: 16,
+    shadowColor: '#000000',
+    shadowOpacity: 0.05,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
   },
   title: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#1f1f1f',
+    color: theme.colors.textPrimary,
     marginBottom: 10,
+    fontFamily: 'Nunito_800ExtraBold',
   },
   tipRow: {
     flexDirection: 'row',
@@ -54,12 +61,13 @@ const styles = StyleSheet.create({
   },
   tipBullet: {
     fontWeight: '800',
-    color: '#1f1f1f',
+    color: theme.colors.buttonDark,
+    fontFamily: 'Nunito_700Bold',
   },
   tipText: {
     flex: 1,
-    color: '#666666',
+    color: theme.colors.textSecondary,
     lineHeight: 21,
-    fontWeight: '600',
+    fontFamily: 'Nunito_600SemiBold',
   },
 });
