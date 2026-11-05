@@ -9,6 +9,12 @@ export type Subtask = {
   completed: boolean;
 };
 
+export type UserTaskProgress = {
+  completed: boolean;
+  completedOn: string;
+  subtasks: Record<string, boolean>;
+};
+
 export type Task = {
   id: string;
   title: string;
@@ -25,11 +31,15 @@ export type Task = {
   participantUserIds: string[];
   assignedUserIds: string[];
   subtasks: Subtask[];
+  progressByUserId?: Record<string, UserTaskProgress>;
 };
 
 export type UserAccount = {
   id: string;
   name: string;
+  age: number | null;
+  photoUri: string;
+  dailyFocus: string;
 };
 
 type TodoStoreValue = {
@@ -37,6 +47,10 @@ type TodoStoreValue = {
   users: UserAccount[];
   activeUserId: string;
   addUser: (name: string) => void;
+  updateUserProfile: (
+    userId: string,
+    updates: Partial<Pick<UserAccount, 'name' | 'age' | 'photoUri' | 'dailyFocus'>>
+  ) => void;
   setActiveUserId: (userId: string) => void;
   addTask: (
     title: string,
@@ -74,13 +88,59 @@ const TodoStoreContext = createContext<TodoStoreValue | null>(null);
 
 const buildId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
-const defaultUser: UserAccount = { id: 'default-user', name: 'Default user' };
+const defaultUser: UserAccount = {
+  id: 'default-user',
+  name: 'Default user',
+  age: null,
+  photoUri: '',
+  dailyFocus: '',
+};
 const initialUsers: UserAccount[] = [defaultUser];
 
 const initialTasks: Task[] = [];
 const STORAGE_KEY = 'todo-app-state-v1';
 const SYNC_INTERVAL_MS = 2500;
 const REMINDER_DATA_KEY = 'todoAppReminder';
+
+export const getUserTaskProgress = (task: Task, userId: string): UserTaskProgress => {
+  const savedProgress = task.progressByUserId?.[userId];
+  if (savedProgress) return savedProgress;
+
+  return {
+    completed: task.completed,
+    completedOn: task.completedOn,
+    subtasks: task.subtasks.reduce<Record<string, boolean>>((result, subtask) => {
+      result[subtask.id] = subtask.completed;
+      return result;
+    }, {}),
+  };
+};
+
+const getTaskAssigneeIds = (task: Pick<Task, 'assignedUserIds' | 'createdByUserId'>) =>
+  task.assignedUserIds.length > 0 ? task.assignedUserIds : [task.createdByUserId];
+
+const updateTaskAggregate = (
+  task: Task,
+  progressByUserId: Record<string, UserTaskProgress>,
+  subtasks: Subtask[] = task.subtasks
+): Task => {
+  const assigneeIds = getTaskAssigneeIds(task);
+  const assigneeProgress = assigneeIds.map(
+    (userId) => progressByUserId[userId] ?? getUserTaskProgress(task, userId)
+  );
+  const completed = assigneeProgress.length > 0 && assigneeProgress.every((progress) => progress.completed);
+
+  return {
+    ...task,
+    completed,
+    completedOn: completed && task.isDaily ? getTodayIsoDate() : '',
+    progressByUserId,
+    subtasks: subtasks.map((subtask) => ({
+      ...subtask,
+      completed: assigneeProgress.length > 0 && assigneeProgress.every((progress) => progress.subtasks[subtask.id] === true),
+    })),
+  };
+};
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -210,6 +270,12 @@ const apiBaseUrl =
     default: 'http://localhost:3000',
   });
 
+const serializeRemoteState = (state: PersistedAppState) =>
+  JSON.stringify({
+    ...state,
+    users: state.users.map((user) => ({ ...user, photoUri: '' })),
+  });
+
 export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<UserAccount[]>(initialUsers);
   const [activeUserId, setActiveUserId] = useState(initialUsers[0].id);
@@ -218,27 +284,84 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localSnapshotRef = useRef('');
+  const remoteSnapshotRef = useRef('');
+  const localPhotoUrisRef = useRef<Record<string, string>>({});
   const suppressNextRemoteSaveRef = useRef(false);
   const notificationPermissionRequestedRef = useRef(false);
   const notificationSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
 
-  const normalizeState = (payload: Partial<PersistedAppState>): PersistedAppState => {
-    const nextUsers = Array.isArray(payload.users) && payload.users.length > 0 ? payload.users : initialUsers;
+  const normalizeState = (
+    payload: Partial<PersistedAppState>,
+    preserveLocalPhotos = false
+  ): PersistedAppState => {
+    const nextUsers = Array.isArray(payload.users) && payload.users.length > 0
+      ? payload.users.map((user) => ({
+          ...user,
+          age: typeof user.age === 'number' && Number.isInteger(user.age) && user.age > 0 ? user.age : null,
+          photoUri: preserveLocalPhotos
+            ? localPhotoUrisRef.current[user.id] ?? ''
+            : typeof user.photoUri === 'string' ? user.photoUri : '',
+          dailyFocus: typeof user.dailyFocus === 'string' ? user.dailyFocus : '',
+        }))
+      : initialUsers;
     const today = getTodayIsoDate();
     const nextTasks = Array.isArray(payload.tasks)
       ? payload.tasks.map((task) => {
           const isDaily = task.isDaily === true;
-          const completedOn = typeof task.completedOn === 'string' ? task.completedOn : '';
-          const completionExpired = isDaily && task.completed && completedOn !== today;
-          return {
+          const legacyCompletedOn = typeof task.completedOn === 'string' ? task.completedOn : '';
+          const subtasks = Array.isArray(task.subtasks)
+            ? task.subtasks.map((subtask) => ({ ...subtask, completed: subtask.completed === true }))
+            : [];
+          const assignedUserIds = Array.isArray(task.assignedUserIds)
+            ? task.assignedUserIds.filter((userId): userId is string => typeof userId === 'string')
+            : [];
+          const createdByUserId = typeof task.createdByUserId === 'string' ? task.createdByUserId : nextUsers[0].id;
+          const taskWithNormalizedUsers = {
             ...task,
-            completed: completionExpired ? false : task.completed,
-            completedOn: completionExpired ? '' : completedOn,
+            createdByUserId,
+            assignedUserIds,
             isDaily,
             dailyTime: typeof task.dailyTime === 'string' ? task.dailyTime : '09:00',
             appName: typeof task.appName === 'string' ? task.appName : '',
             appPackageName: typeof task.appPackageName === 'string' ? task.appPackageName : '',
+            subtasks,
           };
+          const legacyCompleted = task.completed === true && (!isDaily || legacyCompletedOn === today);
+          const legacySubtasks = new Map(subtasks.map((subtask) => [subtask.id, subtask.completed]));
+          const savedProgress = task.progressByUserId && typeof task.progressByUserId === 'object'
+            ? task.progressByUserId
+            : {};
+          const userIds = new Set([
+            ...getTaskAssigneeIds(taskWithNormalizedUsers),
+            ...Object.keys(savedProgress),
+          ]);
+          const progressByUserId = Array.from(userIds).reduce<Record<string, UserTaskProgress>>((result, userId) => {
+            const previous = savedProgress[userId];
+            const previousSubtasks = previous?.subtasks && typeof previous.subtasks === 'object'
+              ? previous.subtasks
+              : {};
+            const completedOn = typeof previous?.completedOn === 'string' ? previous.completedOn : legacyCompletedOn;
+            const completed = typeof previous?.completed === 'boolean' ? previous.completed : legacyCompleted;
+            const completionExpired = isDaily && completed && completedOn !== today;
+            result[userId] = {
+              completed: completionExpired ? false : completed,
+              completedOn: completionExpired ? '' : completedOn,
+              subtasks: subtasks.reduce<Record<string, boolean>>((subtaskProgress, subtask) => {
+                const savedValue = previousSubtasks[subtask.id];
+                const legacyValue = legacySubtasks.get(subtask.id) ?? false;
+                subtaskProgress[subtask.id] =
+                  completionExpired ? false : typeof savedValue === 'boolean' ? savedValue : legacyValue;
+                return subtaskProgress;
+              }, {}),
+            };
+            return result;
+          }, {});
+
+          return updateTaskAggregate(
+            taskWithNormalizedUsers as Task,
+            progressByUserId,
+            subtasks
+          );
         })
       : initialTasks;
     const nextActiveUserId =
@@ -270,7 +393,12 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         const savedState = await AsyncStorage.getItem(STORAGE_KEY);
         if (savedState) {
           const localPayload = JSON.parse(savedState) as Partial<PersistedAppState>;
-          applyState(normalizeState(localPayload));
+          const normalized = normalizeState(localPayload);
+          localPhotoUrisRef.current = Object.fromEntries(
+            normalized.users.filter((user) => user.photoUri).map((user) => [user.id, user.photoUri])
+          );
+          applyState(normalized);
+          remoteSnapshotRef.current = serializeRemoteState(normalized);
         }
       } catch (error) {
         console.error('Failed to load local app state:', error);
@@ -285,13 +413,14 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         if (!response.ok) return;
 
         const serverPayload = (await response.json()) as Partial<PersistedAppState>;
-        const normalized = normalizeState(serverPayload);
-        const serverSnapshot = JSON.stringify(normalized);
+        const normalized = normalizeState(serverPayload, true);
+        const serverSnapshot = serializeRemoteState(normalized);
 
-        if (serverSnapshot !== localSnapshotRef.current) {
+        if (serverSnapshot !== remoteSnapshotRef.current) {
           applyState(normalized, true);
-          await AsyncStorage.setItem(STORAGE_KEY, serverSnapshot);
+          await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
         }
+        remoteSnapshotRef.current = serverSnapshot;
       } catch (error) {
         console.error('Failed to load server app state:', error);
       }
@@ -314,6 +443,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         tasks,
       };
       const snapshot = JSON.stringify(payload);
+      const remoteSnapshot = serializeRemoteState(payload);
       localSnapshotRef.current = snapshot;
 
       try {
@@ -329,14 +459,20 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (remoteSnapshot === remoteSnapshotRef.current) return;
+
       try {
-        await fetch(`${apiBaseUrl}/state`, {
+        const response = await fetch(`${apiBaseUrl}/state`, {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: snapshot,
+          body: remoteSnapshot,
         });
+        if (!response.ok) {
+          throw new Error(`Server returned ${response.status}`);
+        }
+        remoteSnapshotRef.current = remoteSnapshot;
       } catch (error) {
         console.error('Failed to save server app state:', error);
       }
@@ -376,14 +512,25 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
       setTasks((currentTasks) => {
         let changed = false;
         const nextTasks = currentTasks.map((task) => {
-          if (!task.isDaily || !task.completed || task.completedOn === today) return task;
+          if (!task.isDaily) return task;
+          let taskChanged = false;
+          const progressByUserId = { ...task.progressByUserId };
+          Object.entries(progressByUserId).forEach(([userId, progress]) => {
+            const hasCompletedSubtasks = Object.values(progress.subtasks).some(Boolean);
+            if (
+              progress.completedOn === today ||
+              (!progress.completed && !hasCompletedSubtasks)
+            ) return;
+            taskChanged = true;
+            progressByUserId[userId] = {
+              completed: false,
+              completedOn: '',
+              subtasks: Object.fromEntries(Object.keys(progress.subtasks).map((subtaskId) => [subtaskId, false])),
+            };
+          });
+          if (!taskChanged) return task;
           changed = true;
-          return {
-            ...task,
-            completed: false,
-            completedOn: '',
-            subtasks: task.subtasks.map((subtask) => ({ ...subtask, completed: false })),
-          };
+          return updateTaskAggregate(task, progressByUserId);
         });
         return changed ? nextTasks : currentTasks;
       });
@@ -403,15 +550,16 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         if (!response.ok) return;
 
         const serverPayload = (await response.json()) as Partial<PersistedAppState>;
-        const normalized = normalizeState(serverPayload);
-        const serverSnapshot = JSON.stringify(normalized);
+        const normalized = normalizeState(serverPayload, true);
+        const serverSnapshot = serializeRemoteState(normalized);
 
-        if (serverSnapshot === localSnapshotRef.current) return;
+        if (serverSnapshot === remoteSnapshotRef.current) return;
 
         applyState(normalized, true);
-        await AsyncStorage.setItem(STORAGE_KEY, serverSnapshot);
-      } catch {
-        // Keep app usable offline; next successful poll will sync state.
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
+        remoteSnapshotRef.current = serverSnapshot;
+      } catch (error) {
+        console.error('Failed to sync server app state:', error);
       }
     }, SYNC_INTERVAL_MS);
 
@@ -434,10 +582,17 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         return prev;
       }
 
-      const nextUser = { id: buildId(), name: cleaned };
+      const nextUser: UserAccount = { id: buildId(), name: cleaned, age: null, photoUri: '', dailyFocus: '' };
       setActiveUserId(nextUser.id);
       return [nextUser, ...prev];
     });
+  };
+
+  const updateUserProfile: TodoStoreValue['updateUserProfile'] = (userId, updates) => {
+    if (typeof updates.photoUri === 'string') {
+      localPhotoUrisRef.current[userId] = updates.photoUri;
+    }
+    setUsers((prev) => prev.map((user) => (user.id === userId ? { ...user, ...updates } : user)));
   };
 
   const addTask = (
@@ -455,6 +610,12 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
 
     const nextAssignedUserIds = assignedUserIds.length > 0 ? Array.from(new Set(assignedUserIds)) : [activeUserId];
     const nextStartDate = isDaily && !startDate ? getTodayIsoDate() : startDate;
+    const progressByUserId = Array.from(new Set([...nextAssignedUserIds, activeUserId])).reduce<
+      Record<string, UserTaskProgress>
+    >((result, userId) => {
+      result[userId] = { completed: false, completedOn: '', subtasks: {} };
+      return result;
+    }, {});
 
     setTasks((prev) => [
       {
@@ -473,6 +634,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         participantUserIds: [activeUserId],
         assignedUserIds: nextAssignedUserIds,
         subtasks: [],
+        progressByUserId,
       },
       ...prev,
     ]);
@@ -486,22 +648,22 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     setTasks((prev) =>
       prev.map((task) => {
         if (task.id !== taskId) return task;
+        const progress = getUserTaskProgress(task, activeUserId);
         const nextCompleted = task.isDaily
-          ? !(task.completed && task.completedOn === getTodayIsoDate())
-          : !task.completed;
-
-     
-        const syncedSubtasks = task.subtasks.map((subtask) => ({
-          ...subtask,
-          completed: nextCompleted,
-        }));
-
-        return {
-          ...task,
+          ? !(progress.completed && progress.completedOn === getTodayIsoDate())
+          : !progress.completed;
+        const nextProgress: UserTaskProgress = {
           completed: nextCompleted,
           completedOn: task.isDaily && nextCompleted ? getTodayIsoDate() : '',
-          subtasks: syncedSubtasks,
+          subtasks: task.subtasks.reduce<Record<string, boolean>>((result, subtask) => {
+            result[subtask.id] = nextCompleted;
+            return result;
+          }, {}),
         };
+        return updateTaskAggregate(task, {
+          ...task.progressByUserId,
+          [activeUserId]: nextProgress,
+        });
       })
     );
   };
@@ -539,24 +701,33 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     if (!cleaned) return;
 
     setTasks((prev) =>
-      prev.map((task) =>
-        task.id === taskId
-          ? {
-              ...task,
-              completed: false,
-              completedOn: '',
-              participantUserIds: includeUser(task.participantUserIds, activeUserId),
-              subtasks: [
-                ...task.subtasks,
-                {
-                  id: buildId(),
-                  title: cleaned,
-                  completed: false,
-                },
-              ],
-            }
-          : task
-      )
+      prev.map((task) => {
+        if (task.id !== taskId) return task;
+        const nextSubtask = { id: buildId(), title: cleaned, completed: false };
+        const subtasks = [...task.subtasks, nextSubtask];
+        const userIds = new Set([
+          ...Object.keys(task.progressByUserId ?? {}),
+          ...getTaskAssigneeIds(task),
+          activeUserId,
+        ]);
+        const progressByUserId = Array.from(userIds).reduce<Record<string, UserTaskProgress>>((result, userId) => {
+          const previous = getUserTaskProgress(task, userId);
+          result[userId] = {
+            completed: false,
+            completedOn: '',
+            subtasks: { ...previous.subtasks, [nextSubtask.id]: false },
+          };
+          return result;
+        }, {});
+        return updateTaskAggregate(
+          {
+            ...task,
+            participantUserIds: includeUser(task.participantUserIds, activeUserId),
+          },
+          progressByUserId,
+          subtasks
+        );
+      })
     );
   };
 
@@ -565,19 +736,30 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
       prev.map((task) => {
         if (task.id !== taskId) return task;
 
-        const nextSubtasks = task.subtasks.map((subtask) =>
-          subtask.id === subtaskId ? { ...subtask, completed: !subtask.completed } : subtask
-        );
-
-        const allDone = nextSubtasks.length > 0 && nextSubtasks.every((subtask) => subtask.completed);
-
-        return {
-          ...task,
-          subtasks: nextSubtasks,
-          completed: allDone,
-          completedOn: task.isDaily && allDone ? getTodayIsoDate() : '',
-          participantUserIds: includeUser(task.participantUserIds, activeUserId),
+        const progress = getUserTaskProgress(task, activeUserId);
+        const nextProgress = {
+          ...progress,
+          subtasks: {
+            ...progress.subtasks,
+            [subtaskId]: !progress.subtasks[subtaskId],
+          },
         };
+        const allDone = task.subtasks.length > 0 && task.subtasks.every(
+          (subtask) => nextProgress.subtasks[subtask.id] === true
+        );
+        nextProgress.completed = allDone;
+        nextProgress.completedOn = task.isDaily && allDone ? getTodayIsoDate() : '';
+
+        return updateTaskAggregate(
+          {
+            ...task,
+            participantUserIds: includeUser(task.participantUserIds, activeUserId),
+          },
+          {
+            ...task.progressByUserId,
+            [activeUserId]: nextProgress,
+          }
+        );
       })
     );
   };
@@ -588,14 +770,25 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         if (task.id !== taskId) return task;
 
         const nextSubtasks = task.subtasks.filter((subtask) => subtask.id !== subtaskId);
-        const allDone = nextSubtasks.length > 0 && nextSubtasks.every((subtask) => subtask.completed);
-
-        return {
-          ...task,
-          subtasks: nextSubtasks,
-          completed: allDone,
-          completedOn: task.isDaily && allDone ? getTodayIsoDate() : '',
-        };
+        const userIds = new Set([
+          ...Object.keys(task.progressByUserId ?? {}),
+          ...getTaskAssigneeIds(task),
+        ]);
+        const progressByUserId = Array.from(userIds).reduce<Record<string, UserTaskProgress>>((result, userId) => {
+          const previous = getUserTaskProgress(task, userId);
+          const subtasks = { ...previous.subtasks };
+          delete subtasks[subtaskId];
+          const allDone = nextSubtasks.length > 0 && nextSubtasks.every(
+            (subtask) => subtasks[subtask.id] === true
+          );
+          result[userId] = {
+            completed: allDone,
+            completedOn: task.isDaily && allDone ? getTodayIsoDate() : '',
+            subtasks,
+          };
+          return result;
+        }, {});
+        return updateTaskAggregate(task, progressByUserId, nextSubtasks);
       })
     );
   };
@@ -606,6 +799,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
       users,
       activeUserId,
       addUser,
+      updateUserProfile,
       setActiveUserId,
       addTask,
       removeTask,

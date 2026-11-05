@@ -1,9 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { Task, useTodoStore } from '@/components/TodoStore';
+import { getUserTaskProgress, Task, useTodoStore } from '@/components/TodoStore';
 import { theme } from '@/constants/Colors';
 
 const toIsoDate = (date: Date) =>
@@ -15,8 +15,8 @@ const addDays = (date: string, days: number) => {
   return `${nextDate.getUTCFullYear()}-${`${nextDate.getUTCMonth() + 1}`.padStart(2, '0')}-${`${nextDate.getUTCDate()}`.padStart(2, '0')}`;
 };
 
-const getTaskStatus = (task: Task, today: string) => {
-  if (task.completed) return 'Completed';
+const getTaskStatus = (task: Task, today: string, isCompleted: boolean) => {
+  if (isCompleted) return 'Completed';
   if (task.endDate && task.endDate < today) return 'Overdue';
   if (task.endDate && task.endDate <= addDays(today, 3)) return 'Due soon';
   if (task.startDate && task.startDate > today) return 'Upcoming';
@@ -60,8 +60,20 @@ const getOccupiedDayCount = (startDate: string, endDate: string) => {
 };
 
 export default function CalendarScreen({ embedded = false }: { embedded?: boolean }) {
-  const { tasks } = useTodoStore();
+  const { tasks: allTasks, activeUserId } = useTodoStore();
+  const tasks = useMemo(
+    () => allTasks.filter(
+      (task) =>
+        task.assignedUserIds.includes(activeUserId) ||
+        (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId)
+    ),
+    [activeUserId, allTasks]
+  );
   const today = toIsoDate(new Date());
+  const isCompletedForActiveUser = useCallback((task: Task) => {
+    const progress = getUserTaskProgress(task, activeUserId);
+    return task.isDaily ? progress.completed && progress.completedOn === today : progress.completed;
+  }, [activeUserId, today]);
   const [month, setMonth] = useState(() => {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
@@ -82,16 +94,16 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
   }, [month]);
 
   const dueSoonTasks = useMemo(
-    () => tasks.filter((task) => !task.completed && task.endDate >= today && task.endDate <= addDays(today, 3)),
-    [tasks, today]
+    () => tasks.filter((task) => !isCompletedForActiveUser(task) && task.endDate >= today && task.endDate <= addDays(today, 3)),
+    [isCompletedForActiveUser, tasks, today]
   );
   const overdueTasks = useMemo(
-    () => tasks.filter((task) => !task.completed && task.endDate && task.endDate < today),
-    [tasks, today]
+    () => tasks.filter((task) => !isCompletedForActiveUser(task) && task.endDate && task.endDate < today),
+    [isCompletedForActiveUser, tasks, today]
   );
   const ongoingTasks = useMemo(
-    () => tasks.filter((task) => !task.completed && (!task.startDate || task.startDate <= today) && (!task.endDate || task.endDate >= today)),
-    [tasks, today]
+    () => tasks.filter((task) => !isCompletedForActiveUser(task) && (!task.startDate || task.startDate <= today) && (!task.endDate || task.endDate >= today)),
+    [isCompletedForActiveUser, tasks, today]
   );
   const selectedTasks = useMemo(
     () => tasks.filter((task) => occursOnDate(task, selectedDate)),
@@ -103,7 +115,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
   };
 
   const renderTask = (task: Task) => {
-    const status = getTaskStatus(task, today);
+    const status = getTaskStatus(task, today, isCompletedForActiveUser(task));
     return (
       <Pressable key={task.id} style={styles.taskRow} onPress={() => setModalTask(task)}>
         <View style={[styles.taskAccent, { backgroundColor: statusColor(status) }]} />
@@ -207,7 +219,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                         {dayTasks.slice(0, 3).map((task) => (
                           <View
                             key={task.id}
-                            style={[styles.dayDot, { backgroundColor: task.completed ? theme.colors.success : task.endDate === date ? theme.colors.accent : theme.colors.primary }]}
+                            style={[styles.dayDot, { backgroundColor: isCompletedForActiveUser(task) ? theme.colors.success : task.endDate === date ? theme.colors.accent : theme.colors.primary }]}
                           />
                         ))}
                       </View>
@@ -333,11 +345,11 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                   </View>
                 ) : null}
                 <View style={styles.detailLine}>
-                  <Ionicons name="flag-outline" size={18} color={statusColor(getTaskStatus(modalTask, today))} />
+                  <Ionicons name="flag-outline" size={18} color={statusColor(getTaskStatus(modalTask, today, isCompletedForActiveUser(modalTask)))} />
                   <View style={styles.detailTextWrap}>
                     <Text style={styles.detailLabel}>Status</Text>
-                    <Text style={[styles.detailValue, { color: statusColor(getTaskStatus(modalTask, today)) }]}>
-                      {getTaskStatus(modalTask, today)}
+                    <Text style={[styles.detailValue, { color: statusColor(getTaskStatus(modalTask, today, isCompletedForActiveUser(modalTask))) }]}>
+                      {getTaskStatus(modalTask, today, isCompletedForActiveUser(modalTask))}
                     </Text>
                   </View>
                 </View>

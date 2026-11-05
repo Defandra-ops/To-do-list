@@ -3,7 +3,7 @@ import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, G, Rect } from 'react-native-svg';
 
-import { Task, useTodoStore } from '@/components/TodoStore';
+import { getUserTaskProgress, Task, useTodoStore } from '@/components/TodoStore';
 import { theme } from '@/constants/Colors';
 
 const getLocalIsoDate = () => {
@@ -15,7 +15,16 @@ const getLocalIsoDate = () => {
 };
 
 export default function OverviewRecordScreen() {
-  const { tasks, users } = useTodoStore();
+  const { tasks: allTasks, users, activeUserId } = useTodoStore();
+  const activeUserName = users.find((user) => user.id === activeUserId)?.name ?? 'User';
+  const tasks = useMemo(
+    () => allTasks.filter(
+      (task) =>
+        task.assignedUserIds.includes(activeUserId) ||
+        (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId)
+    ),
+    [activeUserId, allTasks]
+  );
   const progressAnim = useRef(new Animated.Value(0)).current;
   const [displayRatio, setDisplayRatio] = useState(0);
   const [subtaskViewMode, setSubtaskViewMode] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
@@ -32,7 +41,16 @@ export default function OverviewRecordScreen() {
     return () => progressAnim.removeListener(listener);
   }, [progressAnim, tasks]);
 
-  const allSubtasks = useMemo(() => tasks.flatMap((task) => task.subtasks), [tasks]);
+  const allSubtasks = useMemo(
+    () => tasks.flatMap((task) => {
+      const progress = getUserTaskProgress(task, activeUserId);
+      return task.subtasks.map((subtask) => ({
+        ...subtask,
+        completed: progress.subtasks[subtask.id] === true,
+      }));
+    }),
+    [activeUserId, tasks]
+  );
   const subtaskStats = useMemo(() => ({
     completed: allSubtasks.filter((subtask) => subtask.completed),
     failed: [] as typeof allSubtasks,
@@ -55,9 +73,10 @@ export default function OverviewRecordScreen() {
     const grouped: Record<string, { done: number; ongoing: number; label: string }> = {};
     tasks.forEach((task) => {
       const key = getDateKey(task.startDate || getLocalIsoDate(), subtaskViewMode);
+      const progress = getUserTaskProgress(task, activeUserId);
       task.subtasks.forEach((subtask) => {
         grouped[key] ??= { done: 0, ongoing: 0, label: key };
-        if (subtask.completed) grouped[key].done += 1;
+        if (progress.subtasks[subtask.id]) grouped[key].done += 1;
         else grouped[key].ongoing += 1;
       });
     });
@@ -65,7 +84,7 @@ export default function OverviewRecordScreen() {
       .sort(([left], [right]) => left.localeCompare(right))
       .slice(-12)
       .map(([, stats]) => stats);
-  }, [tasks, subtaskViewMode]);
+  }, [activeUserId, tasks, subtaskViewMode]);
 
   const userById = useMemo(
     () => users.reduce<Record<string, string>>((result, user) => {
@@ -78,15 +97,22 @@ export default function OverviewRecordScreen() {
   const { completedTasks, failedTasks } = useMemo(() => {
     const today = getLocalIsoDate();
     return {
-      completedTasks: tasks.filter((task) => task.completed),
-      failedTasks: tasks.filter((task) => !task.completed && Boolean(task.endDate) && task.endDate < today),
+      completedTasks: tasks.filter((task) => getUserTaskProgress(task, activeUserId).completed),
+      failedTasks: tasks.filter(
+        (task) =>
+          !getUserTaskProgress(task, activeUserId).completed &&
+          Boolean(task.endDate) &&
+          task.endDate < today
+      ),
     };
-  }, [tasks]);
+  }, [activeUserId, tasks]);
 
   const ongoingTasks = useMemo(() => {
     const failedIds = new Set(failedTasks.map((task) => task.id));
-    return tasks.filter((task) => !task.completed && !failedIds.has(task.id));
-  }, [failedTasks, tasks]);
+    return tasks.filter(
+      (task) => !getUserTaskProgress(task, activeUserId).completed && !failedIds.has(task.id)
+    );
+  }, [activeUserId, failedTasks, tasks]);
 
   const totalTasks = tasks.length;
   const safeTotal = Math.max(totalTasks, 1);
@@ -135,8 +161,8 @@ export default function OverviewRecordScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>Overview Records</Text>
-        <Text style={styles.subtitle}>Track completed, ongoing, and overdue tasks.</Text>
+        <Text style={styles.title}>{activeUserName}&apos;s Progress</Text>
+        <Text style={styles.subtitle}>Track your completed, ongoing, and overdue tasks.</Text>
 
         <Text style={styles.chartTitle}>Big Tasks</Text>
         <Animated.View style={[styles.diagramCard, { opacity: progressAnim }]}>

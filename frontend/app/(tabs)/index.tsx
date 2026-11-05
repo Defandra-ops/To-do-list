@@ -1,63 +1,41 @@
 import { Ionicons } from '@expo/vector-icons';
-import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Modal,
-  Platform,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Switch,
-  Text,
-  TextInput,
-  View,
-} from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useTodoStore } from '@/components/TodoStore';
-import { getInstalledApps, type InstalledApp } from '@/modules/installed-app-picker';
+import { getUserTaskProgress, useTodoStore } from '@/components/TodoStore';
 import { theme } from '@/constants/Colors';
 
-type DraftMap = Record<string, string>;
-
-type MilestoneDraft = {
-  startDate: string;
-  endDate: string;
-  isDaily: boolean;
-  dailyTime: string;
-  appName: string;
-  appPackageName: string;
-};
-type MilestoneDraftMap = Record<string, MilestoneDraft>;
-
-type DatePickerTarget = {
-  scope: 'new' | 'milestone';
-  field: 'startDate' | 'endDate';
-  taskId?: string;
-};
-
-type TimePickerTarget = {
-  scope: 'new' | 'milestone';
-  taskId?: string;
-};
-
-type AppPickerTarget = {
-  scope: 'new' | 'milestone';
-  taskId?: string;
-};
-
-const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
-
-const formatIsoDate = (date: Date) => {
-  const year = date.getFullYear();
-  const month = `${date.getMonth() + 1}`.padStart(2, '0');
-  const day = `${date.getDate()}`.padStart(2, '0');
-  return `${year}-${month}-${day}`;
-};
+const menuItems = [
+  {
+    title: 'My tasks',
+    description: 'Create tasks and manage your routines',
+    icon: 'checkbox-outline',
+    route: '/(tabs)/planner',
+    color: theme.colors.primary,
+  },
+  {
+    title: 'Calendar',
+    description: 'See deadlines and scheduled tasks',
+    icon: 'calendar-outline',
+    route: '/(tabs)/calendar',
+    color: '#E8F4F7',
+  },
+  {
+    title: 'Progress',
+    description: 'Review completed and ongoing work',
+    icon: 'stats-chart-outline',
+    route: '/(tabs)/overview',
+    color: '#EAF5EF',
+  },
+  {
+    title: 'People',
+    description: 'Manage your local profiles',
+    icon: 'people-outline',
+    route: '/(tabs)/users',
+    color: '#FFF1EC',
+  },
+] as const;
 
 const getLocalIsoDate = () => {
   const today = new Date();
@@ -67,890 +45,102 @@ const getLocalIsoDate = () => {
   return `${year}-${month}-${day}`;
 };
 
-const taskOccupiesDate = (task: { startDate: string; endDate: string; isDaily: boolean }, date: string) => {
-  if (task.isDaily) return (!task.startDate || task.startDate <= date) && (!task.endDate || date <= task.endDate);
-  if (task.startDate && task.endDate) return task.startDate <= date && date <= task.endDate;
-  if (task.startDate) return task.startDate <= date;
-  if (task.endDate) return task.endDate === date;
-  return false;
-};
-
-const formatReadableDate = (date: string) =>
-  new Date(`${date}T00:00:00`).toLocaleDateString('en', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-
-const formatTime = (time: string) => {
-  const [hour, minute] = time.split(':').map(Number);
-  const date = new Date();
-  date.setHours(hour, minute, 0, 0);
-  return date.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' });
-};
-
-const parseTime = (time: string) => {
-  const [hour, minute] = time.split(':').map(Number);
-  const date = new Date();
-  date.setHours(hour || 0, minute || 0, 0, 0);
-  return date;
-};
-
-const toTimeValue = (date: Date) => `${`${date.getHours()}`.padStart(2, '0')}:${`${date.getMinutes()}`.padStart(2, '0')}`;
-
-export default function PlannerScreen() {
-  const {
-    tasks,
-    users,
-    activeUserId,
-    addTask,
-    removeTask,
-    toggleTask,
-    updateTaskMilestone,
-    addSubtask,
-    toggleSubtask,
-    removeSubtask,
-  } = useTodoStore();
-
+export default function HomeScreen() {
   const router = useRouter();
-  const activeUserName = users.find((user) => user.id === activeUserId)?.name ?? 'Default user';
-  const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
-  const [taskDraft, setTaskDraft] = useState('');
-  const [taskPeriod, setTaskPeriod] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [dailyTimeDraft, setDailyTimeDraft] = useState('09:00');
-  const [appNameDraft, setAppNameDraft] = useState('');
-  const [appPackageNameDraft, setAppPackageNameDraft] = useState('');
-  const [startDateDraft, setStartDateDraft] = useState('');
-  const [endDateDraft, setEndDateDraft] = useState('');
-  const [formError, setFormError] = useState('');
-  const [subtaskDrafts, setSubtaskDrafts] = useState<DraftMap>({});
-  const [milestoneDrafts, setMilestoneDrafts] = useState<MilestoneDraftMap>({});
-  const [activeDatePicker, setActiveDatePicker] = useState<DatePickerTarget | null>(null);
-  const [activeTimePicker, setActiveTimePicker] = useState<TimePickerTarget | null>(null);
-  const [activeAppPicker, setActiveAppPicker] = useState<AppPickerTarget | null>(null);
-  const [installedApps, setInstalledApps] = useState<InstalledApp[]>([]);
-  const [appSearchDraft, setAppSearchDraft] = useState('');
-  const [isLoadingApps, setIsLoadingApps] = useState(false);
-  const [appPickerError, setAppPickerError] = useState('');
-  const [timePickerValue, setTimePickerValue] = useState(() => parseTime('09:00'));
-  const [pickerPreviewDate, setPickerPreviewDate] = useState(getLocalIsoDate());
-  const [pickerMonth, setPickerMonth] = useState(() => {
-    const now = new Date();
-    return new Date(now.getFullYear(), now.getMonth(), 1);
-  });
-
-  const pickerMonthDays = useMemo(() => {
-    const firstWeekday = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth(), 1).getDay();
-    const daysInMonth = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth() + 1, 0).getDate();
-    return Array.from({ length: 42 }, (_, index) => {
-      const day = index - firstWeekday + 1;
-      if (day < 1 || day > daysInMonth) return '';
-      const date = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth(), day);
-      return formatIsoDate(date);
-    });
-  }, [pickerMonth]);
-
-  const pickerOccupiedTasks = useMemo(
-    () => tasks.filter((task) => taskOccupiesDate(task, pickerPreviewDate)),
-    [pickerPreviewDate, tasks]
+  const { tasks, users, activeUserId } = useTodoStore();
+  const activeUser = users.find((user) => user.id === activeUserId);
+  const activeUserName = activeUser?.name ?? 'Planner';
+  const userTasks = tasks.filter(
+    (task) =>
+      task.assignedUserIds.includes(activeUserId) ||
+      (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId)
   );
+  const completedTasks = userTasks.filter((task) => getUserTaskProgress(task, activeUserId).completed).length;
+  const today = getLocalIsoDate();
+  const overdueTasks = userTasks.filter(
+    (task) => !getUserTaskProgress(task, activeUserId).completed && Boolean(task.endDate) && task.endDate < today
+  ).length;
 
-  const filteredInstalledApps = useMemo(() => {
-    const query = appSearchDraft.trim().toLowerCase();
-    if (!query) return installedApps;
-    return installedApps.filter((app) =>
-      `${app.name} ${app.packageName}`.toLowerCase().includes(query)
-    );
-  }, [appSearchDraft, installedApps]);
-
-  const userById = useMemo(() => {
-    return users.reduce<Record<string, string>>((accumulator, user) => {
-      accumulator[user.id] = user.name;
-      return accumulator;
-    }, {});
-  }, [users]);
-
-  const stats = useMemo(() => {
-    const totalTasks = tasks.length;
-    const doneTasks = tasks.filter((task) => task.completed).length;
-    const allSubtasks = tasks.flatMap((task) => task.subtasks);
-    const doneSubtasks = allSubtasks.filter((subtask) => subtask.completed).length;
-    const withDeadlines = tasks.filter((task) => task.endDate).length;
-    const today = getLocalIsoDate();
-    const overdueTasks = tasks.filter(
-      (task) => Boolean(task.endDate) && !task.completed && task.endDate < today
-    );
-
-    return {
-      totalTasks,
-      doneTasks,
-      allSubtasks: allSubtasks.length,
-      doneSubtasks,
-      withDeadlines,
-      overdueTasks,
-    };
-  }, [tasks]);
-
-  const addTaskFromDraft = () => {
-    if (!taskDraft.trim()) return;
-
-    if (startDateDraft && !isIsoDate(startDateDraft)) {
-      setFormError('Start date must use YYYY-MM-DD');
-      return;
-    }
-
-    if (endDateDraft && !isIsoDate(endDateDraft)) {
-      setFormError('Deadline must use YYYY-MM-DD');
-      return;
-    }
-
-    if (startDateDraft && endDateDraft && startDateDraft > endDateDraft) {
-      setFormError('Start date must be before deadline');
-      return;
-    }
-
-    const assigneeIds = selectedAssigneeIds.length > 0 ? selectedAssigneeIds : [];
-    addTask(
-      taskDraft,
-      startDateDraft,
-      endDateDraft,
-      assigneeIds,
-      taskPeriod === 'daily',
-      dailyTimeDraft,
-      appNameDraft,
-      appPackageNameDraft
-    );
-    setTaskDraft('');
-    setStartDateDraft('');
-    setEndDateDraft('');
-    setTaskPeriod('monthly');
-    setDailyTimeDraft('09:00');
-    setAppNameDraft('');
-    setAppPackageNameDraft('');
-    setSelectedAssigneeIds([]);
-    setFormError('');
-  };
-
-  const toggleAssignee = (userId: string) => {
-    setSelectedAssigneeIds((prev) =>
-      prev.includes(userId) ? prev.filter((id) => id !== userId) : [...prev, userId]
-    );
-  };
-
-  const setSubtaskDraft = (taskId: string, value: string) => {
-    setSubtaskDrafts((prev) => ({ ...prev, [taskId]: value }));
-  };
-
-  const openDatePicker = (target: DatePickerTarget) => {
-    setFormError('');
-    const currentDate = getDraftDate(target) || getLocalIsoDate();
-    setPickerPreviewDate(currentDate);
-    setPickerMonth(new Date(`${currentDate}T00:00:00`));
-    setPickerMonth((currentMonth) => new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1));
-    setActiveDatePicker(target);
-  };
-
-  const getDraftDate = (target: DatePickerTarget) => {
-    if (target.scope === 'new') {
-      return target.field === 'startDate' ? startDateDraft : endDateDraft;
-    }
-
-    if (!target.taskId) {
-      return '';
-    }
-
-    return milestoneDrafts[target.taskId]?.[target.field] ?? '';
-  };
-
-  const applyPickerSelection = () => {
-    if (!activeDatePicker) {
-      return;
-    }
-
-    if (activeDatePicker.scope === 'new') {
-      if (activeDatePicker.field === 'startDate') {
-        setStartDateDraft(pickerPreviewDate);
-      } else {
-        setEndDateDraft(pickerPreviewDate);
-      }
-      setActiveDatePicker(null);
-      return;
-    }
-
-    if (activeDatePicker.taskId) {
-      setMilestoneDraft(activeDatePicker.taskId, activeDatePicker.field, pickerPreviewDate);
-    }
-    setActiveDatePicker(null);
-  };
-
-  const movePickerMonth = (amount: number) => {
-    setPickerMonth((current) => new Date(current.getFullYear(), current.getMonth() + amount, 1));
-  };
-
-  const getMilestoneDraft = (
-    taskId: string,
-    startDate: string,
-    endDate: string,
-    isDaily: boolean,
-    dailyTime: string,
-    appName: string,
-    appPackageName: string
-  ): MilestoneDraft => milestoneDrafts[taskId] ?? { startDate, endDate, isDaily, dailyTime, appName, appPackageName };
-
-  const setMilestoneDraft = (taskId: string, key: keyof MilestoneDraft, value: string | boolean) => {
-    setMilestoneDrafts((prev) => {
-      const task = tasks.find((item) => item.id === taskId);
-      const next = prev[taskId] ?? {
-        startDate: task?.startDate ?? '',
-        endDate: task?.endDate ?? '',
-        isDaily: task?.isDaily ?? false,
-        dailyTime: task?.dailyTime ?? '09:00',
-        appName: task?.appName ?? '',
-        appPackageName: task?.appPackageName ?? '',
-      };
-      return { ...prev, [taskId]: { ...next, [key]: value } };
-    });
-  };
-
-  const getDraftTime = (target: TimePickerTarget) => {
-    if (target.scope === 'new') return dailyTimeDraft;
-    if (!target.taskId) return '09:00';
-    return milestoneDrafts[target.taskId]?.dailyTime ?? tasks.find((task) => task.id === target.taskId)?.dailyTime ?? '09:00';
-  };
-
-  const openTimePicker = (target: TimePickerTarget) => {
-    setTimePickerValue(parseTime(getDraftTime(target)));
-    setActiveTimePicker(target);
-  };
-
-  const applyTimePickerValue = (date: Date) => {
-    if (!activeTimePicker) return;
-    const nextTime = toTimeValue(date);
-    if (activeTimePicker.scope === 'new') {
-      setDailyTimeDraft(nextTime);
-    } else if (activeTimePicker.taskId) {
-      setMilestoneDraft(activeTimePicker.taskId, 'dailyTime', nextTime);
-    }
-    setActiveTimePicker(null);
-  };
-
-  const handleTimePickerChange = (event: DateTimePickerEvent, selectedTime?: Date) => {
-    if (event.type === 'dismissed') {
-      setActiveTimePicker(null);
-      return;
-    }
-    if (!selectedTime) return;
-    setTimePickerValue(selectedTime);
-    if (Platform.OS === 'android') applyTimePickerValue(selectedTime);
-  };
-
-  const addSubtaskFromDraft = (taskId: string) => {
-    const value = subtaskDrafts[taskId] ?? '';
-    if (!value.trim()) return;
-    addSubtask(taskId, value);
-    setSubtaskDraft(taskId, '');
-  };
-
-  const saveMilestone = (taskId: string, draft: MilestoneDraft) => {
-    const { startDate, endDate, isDaily, dailyTime, appName, appPackageName } = draft;
-    if (startDate && !isIsoDate(startDate)) return;
-    if (endDate && !isIsoDate(endDate)) return;
-    if (startDate && endDate && startDate > endDate) return;
-
-    updateTaskMilestone(taskId, startDate, endDate, isDaily, dailyTime, appName, appPackageName);
-  };
-
-  const openAppPicker = async (target: AppPickerTarget) => {
-    setActiveAppPicker(target);
-    setAppSearchDraft('');
-    setAppPickerError('');
-    if (Platform.OS !== 'android') {
-      setInstalledApps([]);
-      setAppPickerError('Installed app selection is available in the Android app.');
-      return;
-    }
-
-    setIsLoadingApps(true);
-    try {
-      setInstalledApps(await getInstalledApps());
-    } catch {
-      setAppPickerError('Could not load installed apps. Rebuild the Android development app and try again.');
-      setInstalledApps([]);
-    } finally {
-      setIsLoadingApps(false);
-    }
-  };
-
-  const selectInstalledApp = (app: InstalledApp | null) => {
-    if (!activeAppPicker) return;
-    if (activeAppPicker.scope === 'new') {
-      setAppNameDraft(app?.name ?? '');
-      setAppPackageNameDraft(app?.packageName ?? '');
-    } else if (activeAppPicker.taskId) {
-      setMilestoneDraft(activeAppPicker.taskId, 'appName', app?.name ?? '');
-      setMilestoneDraft(activeAppPicker.taskId, 'appPackageName', app?.packageName ?? '');
-    }
-    setActiveAppPicker(null);
+  const openMenuItem = (route: (typeof menuItems)[number]['route']) => {
+    router.push(route as never);
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <FlatList
-        data={tasks}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.content}
-        ListHeaderComponent={
-          <View style={styles.headerWrap}>
-            <View style={styles.heroCard}>
-              <View style={styles.headerTopRow}>
-                <View>
-                  <Text style={styles.eyebrow}>YOUR PERSONAL PLANNER</Text>
-                  <Text style={styles.title}>Big Tasks</Text>
-                </View>
-                <Pressable style={styles.userIconButton} onPress={() => router.push('/(tabs)/two')}>
-                  <Ionicons name="person-circle-outline" size={30} color={theme.colors.buttonDark} />
-                </Pressable>
-              </View>
-              <Text style={styles.subtitle}>Make room for what matters, one step at a time.</Text>
-
-              <View style={styles.statsRow}>
-                <View style={[styles.statCard, styles.statCardTotal]}>
-                  <Text style={styles.statNumber}>{stats.totalTasks}</Text>
-                  <Text style={styles.statLabel}>Big Tasks</Text>
-                </View>
-                <View style={[styles.statCard, styles.statCardCompleted]}>
-                  <Text style={styles.statNumber}>{stats.doneTasks}</Text>
-                  <Text style={styles.statLabel}>Completed</Text>
-                </View>
-                <View style={[styles.statCard, styles.statCardDeadline]}>
-                  <Text style={styles.statNumber}>{stats.withDeadlines}</Text>
-                  <Text style={styles.statLabel}>With Deadline</Text>
-                </View>
-              </View>
+      <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.heading}>
+          <View style={styles.greetingRow}>
+            <View style={styles.greetingCopy}>
+              <Text style={styles.eyebrow}>YOUR PERSONAL PLANNER</Text>
+              <Text style={styles.title}>Hello, {activeUserName}</Text>
             </View>
-
-            {stats.overdueTasks.length > 0 ? (
-              <View style={styles.overdueCard}>
-                <View style={styles.overdueHeader}>
-                  <View style={styles.overdueDot} />
-                  <View style={styles.overdueTextWrap}>
-                    <Text style={styles.overdueTitle}>Overdue tasks</Text>
-                    <Text style={styles.overdueSubtitle}>
-                      {stats.overdueTasks.length} task{stats.overdueTasks.length === 1 ? '' : 's'} missed the deadline
-                    </Text>
-                  </View>
+            {activeUser?.photoUri
+              ? <Image source={{ uri: activeUser.photoUri }} style={styles.avatarImage} />
+              : (
+                <View style={styles.avatar}>
+                  <Ionicons name="person-outline" size={22} color={theme.colors.buttonDark} />
                 </View>
-
-                <View style={styles.overdueChipRow}>
-                  {stats.overdueTasks.map((task) => (
-                    <View key={task.id} style={styles.overdueChip}>
-                      <Text style={styles.overdueChipText}>
-                        {task.title} · {userById[task.createdByUserId] ?? 'Unknown user'}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            <View style={styles.composerCard}>
-              <TextInput
-                style={styles.taskInput}
-                placeholder="Add a task..."
-                placeholderTextColor={theme.colors.textSecondary}
-                value={taskDraft}
-                onChangeText={setTaskDraft}
-                returnKeyType="next"
-              />
-
-              <View style={styles.periodRow}>
-                <Text style={styles.periodLabel}>Task Period:</Text>
-                <Pressable
-                  style={[
-                    styles.periodButton,
-                    taskPeriod === 'weekly' && styles.periodButtonActive,
-                  ]}
-                  onPress={() => setTaskPeriod('weekly')}>
-                  <Text
-                    style={[
-                      styles.periodButtonText,
-                      taskPeriod === 'weekly' && styles.periodButtonTextActive,
-                    ]}>
-                    Weekly
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[
-                    styles.periodButton,
-                    taskPeriod === 'monthly' && styles.periodButtonActive,
-                  ]}
-                  onPress={() => setTaskPeriod('monthly')}>
-                  <Text
-                    style={[
-                      styles.periodButtonText,
-                      taskPeriod === 'monthly' && styles.periodButtonTextActive,
-                    ]}>
-                    Monthly
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.periodButton, taskPeriod === 'daily' && styles.periodButtonActive]}
-                  onPress={() => setTaskPeriod(taskPeriod === 'daily' ? 'monthly' : 'daily')}>
-                  <Text style={[styles.periodButtonText, taskPeriod === 'daily' && styles.periodButtonTextActive]}>
-                    Daily
-                  </Text>
-                </Pressable>
-              </View>
-
-              {taskPeriod === 'daily' ? (
-                <>
-                  <Pressable
-                    style={styles.dailyAppInputRow}
-                    onPress={() => void openAppPicker({ scope: 'new' })}>
-                    <Ionicons name="apps-outline" size={18} color={theme.colors.buttonDark} />
-                    <View style={styles.dailyAppPickerTextWrap}>
-                      <Text style={styles.dailyAppPickerTitle}>
-                        {appNameDraft || 'Choose installed app'}
-                      </Text>
-                      <Text style={styles.dailyAppPickerSubtitle}>
-                        {appPackageNameDraft || 'Optional · habit without an app'}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
-                  </Pressable>
-                  <Pressable style={styles.dailyTimeButton} onPress={() => openTimePicker({ scope: 'new' })}>
-                    <Ionicons name="time-outline" size={18} color={theme.colors.buttonDark} />
-                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(dailyTimeDraft)}</Text>
-                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
-                  </Pressable>
-                </>
-              ) : null}
-
-              <View style={styles.milestoneRow}>
-                  <Pressable
-                    style={[styles.datePickerButton, !startDateDraft && styles.datePickerButtonEmpty]}
-                    onPress={() => openDatePicker({ scope: 'new', field: 'startDate' })}>
-                    <Ionicons name="calendar-outline" size={16} color={theme.colors.buttonDark} />
-                    <Text style={[styles.datePickerText, !startDateDraft && styles.datePickerPlaceholderText]}>
-                      {startDateDraft || 'Pick start date'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    style={[styles.datePickerButton, !endDateDraft && styles.datePickerButtonEmpty]}
-                    onPress={() => openDatePicker({ scope: 'new', field: 'endDate' })}>
-                    <Ionicons name="calendar-outline" size={16} color={theme.colors.buttonDark} />
-                    <Text style={[styles.datePickerText, !endDateDraft && styles.datePickerPlaceholderText]}>
-                      {endDateDraft || 'Pick deadline'}
-                    </Text>
-                  </Pressable>
-              </View>
-
-              <Text style={styles.assignTitle}>Who must do it?</Text>
-              <View style={styles.assignChipRow}>
-                {users.map((user) => {
-                  const isSelected = selectedAssigneeIds.includes(user.id);
-                  return (
-                    <Pressable
-                      key={user.id}
-                      style={[styles.assignChip, isSelected && styles.assignChipSelected]}
-                      onPress={() => toggleAssignee(user.id)}>
-                      <Text style={[styles.assignChipText, isSelected && styles.assignChipTextSelected]}>
-                        {user.name}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
-
-              <LinearGradient
-                colors={[theme.colors.buttonDark, theme.colors.buttonDark]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={styles.primaryButtonGradient}>
-                <Pressable style={styles.primaryButton} onPress={addTaskFromDraft}>
-                  <Ionicons name="add" size={18} color={theme.colors.cardBackground} />
-                  <Text style={styles.primaryButtonText}>Create Task</Text>
-                </Pressable>
-              </LinearGradient>
-            </View>
+              )}
           </View>
-        }
-        renderItem={({ item }) => {
-          const total = item.subtasks.length;
-          const done = item.subtasks.filter((subtask) => subtask.completed).length;
-          const progress = total === 0 ? 0 : Math.round((done / total) * 100);
-          const milestone = getMilestoneDraft(
-            item.id,
-            item.startDate,
-            item.endDate,
-            item.isDaily,
-            item.dailyTime,
-            item.appName,
-            item.appPackageName
-          );
-          const statusLabel = item.completed ? 'Completed' : item.isDaily ? 'Daily' : 'In progress';
-          const deadlineLabel = item.endDate ? `Deadline ${item.endDate}` : 'No deadline';
-          const isOverdue = !item.isDaily && Boolean(item.endDate) && !item.completed && item.endDate < getLocalIsoDate();
-          const creatorName = userById[item.createdByUserId] ?? 'Unknown user';
-          const deadlineByName = userById[item.deadlineByUserId] ?? creatorName;
-          const includedUsers = item.participantUserIds
-            .map((userId) => userById[userId])
-            .filter((name): name is string => Boolean(name));
-          const assignedUsers = item.assignedUserIds
-            .map((userId) => userById[userId])
-            .filter((name): name is string => Boolean(name));
-
-          return (
-            <View style={[styles.taskCard, isOverdue && styles.taskCardOverdue]}>
-              <View style={styles.taskTopRow}>
-                <Pressable style={styles.taskTitleRow} onPress={() => toggleTask(item.id)}>
-                  <Ionicons
-                    name={item.completed ? 'checkmark-circle' : 'ellipse-outline'}
-                    size={24}
-                    color={item.completed ? theme.colors.success : isOverdue ? theme.colors.accent : theme.colors.buttonDark}
-                  />
-                  <View style={styles.taskTextWrap}>
-                    <Text style={[styles.taskTitle, item.completed && styles.completedText]}>{item.title}</Text>
-                    <Text style={styles.taskMeta}>
-                      {item.isDaily ? `Daily at ${formatTime(item.dailyTime)} · ` : ''}Subtasks done: {done}/{total}
-                    </Text>
-                    {item.appName ? <Text style={styles.taskOwnerText}>App: {item.appName}</Text> : null}
-                    <Text style={styles.taskOwnerText}>Created by {creatorName}</Text>
-                    <Text style={styles.taskOwnerText}>Deadline by {deadlineByName}</Text>
-                    <Text style={styles.taskOwnerText}>
-                      Must do it: {assignedUsers.length > 0 ? assignedUsers.join(', ') : creatorName}
-                    </Text>
-                    <Text style={styles.taskOwnerText}>
-                      Users in task: {includedUsers.length > 0 ? includedUsers.join(', ') : creatorName}
-                    </Text>
-                    <View style={styles.badgeRow}>
-                      <View style={[styles.badge, item.completed ? styles.badgeComplete : styles.badgeNeutral]}>
-                        <Text style={styles.badgeText}>{statusLabel}</Text>
-                      </View>
-                      <View style={[styles.badge, styles.badgeDeadline]}>
-                        <Text style={styles.badgeText}>{deadlineLabel}</Text>
-                      </View>
-                      {isOverdue ? (
-                        <View style={[styles.badge, styles.badgeOverdue]}>
-                          <Text style={[styles.badgeText, styles.badgeTextOverdue]}>Overdue</Text>
-                        </View>
-                      ) : null}
-                    </View>
-                  </View>
-                </Pressable>
-
-                <Pressable style={styles.iconButton} onPress={() => removeTask(item.id)}>
-                  <Ionicons name="trash-outline" size={18} color={theme.colors.accent} />
-                </Pressable>
-              </View>
-
-              <View style={styles.progressTrack}>
-                <View style={[styles.progressFill, { width: `${progress}%` }]} />
-              </View>
-
-              <View style={styles.milestoneRowTask}>
-                <Pressable
-                  style={[styles.datePickerButtonTask, !milestone.startDate && styles.datePickerButtonEmpty]}
-                  onPress={() =>
-                    openDatePicker({
-                      scope: 'milestone',
-                      taskId: item.id,
-                      field: 'startDate',
-                    })
-                  }>
-                  <Ionicons name="calendar-outline" size={15} color={theme.colors.buttonDark} />
-                  <Text style={[styles.datePickerTextTask, !milestone.startDate && styles.datePickerPlaceholderTextTask]}>
-                    {milestone.startDate || 'Start date'}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={[styles.datePickerButtonTask, !milestone.endDate && styles.datePickerButtonEmpty]}
-                  onPress={() =>
-                    openDatePicker({
-                      scope: 'milestone',
-                      taskId: item.id,
-                      field: 'endDate',
-                    })
-                  }>
-                  <Ionicons name="calendar-outline" size={15} color={theme.colors.buttonDark} />
-                  <Text style={[styles.datePickerTextTask, !milestone.endDate && styles.datePickerPlaceholderTextTask]}>
-                    {milestone.endDate || 'Deadline'}
-                  </Text>
-                </Pressable>
-                <Pressable
-                  style={styles.miniButtonWide}
-                  onPress={() => saveMilestone(item.id, milestone)}>
-                  <Text style={styles.miniButtonText}>Save</Text>
-                </Pressable>
-              </View>
-
-              <View style={styles.dailyScheduleRow}>
-                <View style={styles.dailyScheduleLabelWrap}>
-                    <Ionicons name="repeat-outline" size={17} color={theme.colors.buttonDark} />
-                  <Text style={styles.dailyScheduleLabel}>Repeat daily</Text>
-                </View>
-                <Switch
-                  value={milestone.isDaily}
-                  onValueChange={(value) => setMilestoneDraft(item.id, 'isDaily', value)}
-                  trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-                  thumbColor={milestone.isDaily ? theme.colors.buttonDark : theme.colors.cardBackground}
-                />
-              </View>
-              {milestone.isDaily ? (
-                <>
-                  <Pressable
-                    style={styles.dailyAppInputRow}
-                    onPress={() => void openAppPicker({ scope: 'milestone', taskId: item.id })}>
-                    <Ionicons name="apps-outline" size={17} color={theme.colors.buttonDark} />
-                    <View style={styles.dailyAppPickerTextWrap}>
-                      <Text style={styles.dailyAppPickerTitle}>
-                        {milestone.appName || 'Choose installed app'}
-                      </Text>
-                      <Text style={styles.dailyAppPickerSubtitle}>
-                        {milestone.appPackageName || 'Optional · habit without an app'}
-                      </Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
-                  </Pressable>
-                  <Pressable style={styles.dailyTimeButtonTask} onPress={() => openTimePicker({ scope: 'milestone', taskId: item.id })}>
-                    <Ionicons name="time-outline" size={16} color={theme.colors.buttonDark} />
-                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(milestone.dailyTime)}</Text>
-                    <Ionicons name="chevron-forward" size={15} color={theme.colors.textSecondary} />
-                  </Pressable>
-                </>
-              ) : null}
-
-              <View style={styles.subtaskComposerRow}>
-                <View style={styles.subtaskPeriodBadge}>
-                  <Text style={styles.subtaskPeriodBadgeText}>Daily</Text>
-                </View>
-                <TextInput
-                  style={styles.subtaskInput}
-                  placeholder="Add subtask..."
-                  placeholderTextColor={theme.colors.textSecondary}
-                  value={subtaskDrafts[item.id] ?? ''}
-                  onChangeText={(text) => setSubtaskDraft(item.id, text)}
-                  onSubmitEditing={() => addSubtaskFromDraft(item.id)}
-                  returnKeyType="done"
-                />
-                <Pressable style={styles.miniButton} onPress={() => addSubtaskFromDraft(item.id)}>
-                  <Ionicons name="add" size={16} color={theme.colors.buttonDark} />
-                </Pressable>
-              </View>
-
-              {item.subtasks.map((subtask) => (
-                <View key={subtask.id} style={styles.subtaskRow}>
-                  <Pressable style={styles.subtaskLeft} onPress={() => toggleSubtask(item.id, subtask.id)}>
-                    <Ionicons
-                      name={subtask.completed ? 'checkbox' : 'square-outline'}
-                      size={18}
-                      color={subtask.completed ? theme.colors.success : theme.colors.textSecondary}
-                    />
-                    <Text style={[styles.subtaskText, subtask.completed && styles.completedText]}>{subtask.title}</Text>
-                  </Pressable>
-                  <Pressable style={styles.subtaskRemove} onPress={() => removeSubtask(item.id, subtask.id)}>
-                    <Ionicons name="close" size={16} color={theme.colors.accent} />
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-          );
-        }}
-        ListEmptyComponent={<Text style={styles.emptyState}>No tasks yet. Start with one big goal above.</Text>}
-      />
-
-      <Modal
-        transparent
-        animationType="fade"
-        visible={activeDatePicker !== null}
-        onRequestClose={() => setActiveDatePicker(null)}>
-        <View style={styles.dateModalBackdrop}>
-          <Pressable
-            accessibilityLabel="Close date picker"
-            style={StyleSheet.absoluteFill}
-            onPress={() => setActiveDatePicker(null)}
-          />
-          <View style={styles.dateModalPanel}>
-            <View style={styles.dateModalHeader}>
-              <View style={styles.dateModalTitleWrap}>
-                <Text style={styles.dateModalEyebrow}>TASK SCHEDULE</Text>
-                <Text style={styles.dateModalTitle}>
-                  Select {activeDatePicker?.field === 'startDate' ? 'start date' : 'deadline'}
-                </Text>
-              </View>
-              <Pressable style={styles.dateModalClose} onPress={() => setActiveDatePicker(null)}>
-                <Ionicons name="close" size={20} color={theme.colors.buttonDark} />
-              </Pressable>
-            </View>
-
-            <View style={styles.dateModalMonthRow}>
-              <Text style={styles.dateModalMonthTitle}>
-                {pickerMonth.toLocaleDateString('en', { month: 'long', year: 'numeric' })}
-              </Text>
-              <View style={styles.dateModalMonthControls}>
-                <Pressable accessibilityLabel="Previous month" style={styles.dateModalMonthButton} onPress={() => movePickerMonth(-1)}>
-                  <Ionicons name="chevron-back" size={18} color={theme.colors.buttonDark} />
-                </Pressable>
-                <Pressable accessibilityLabel="Next month" style={styles.dateModalMonthButton} onPress={() => movePickerMonth(1)}>
-                  <Ionicons name="chevron-forward" size={18} color={theme.colors.buttonDark} />
-                </Pressable>
-              </View>
-            </View>
-
-            <View style={styles.datePickerWeekdays}>
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
-                <Text key={`${day}-${index}`} style={styles.datePickerWeekday}>{day}</Text>
-              ))}
-            </View>
-            <View style={styles.datePickerGrid}>
-              {pickerMonthDays.map((date, index) => {
-                const occupiedTasks = date ? tasks.filter((task) => taskOccupiesDate(task, date)) : [];
-                const isSelected = date === pickerPreviewDate;
-                const isToday = date === getLocalIsoDate();
-                return (
-                  <Pressable
-                    key={`${date || 'blank'}-${index}`}
-                    disabled={!date}
-                    accessibilityRole="button"
-                    accessibilityLabel={date ? `${formatReadableDate(date)}${occupiedTasks.length ? `, occupied by ${occupiedTasks.map((task) => task.title).join(', ')}` : ', no tasks scheduled'}` : undefined}
-                    style={[styles.datePickerDay, isSelected && styles.datePickerDaySelected]}
-                    onPress={() => setPickerPreviewDate(date)}>
-                    {date ? (
-                      <>
-                        <Text style={[styles.datePickerDayNumber, isToday && styles.datePickerDayToday, isSelected && styles.datePickerDayNumberSelected]}>
-                          {Number(date.slice(-2))}
-                        </Text>
-                        <View style={styles.datePickerDots}>
-                          {occupiedTasks.slice(0, 3).map((task) => (
-                            <View key={task.id} style={[styles.datePickerDot, { backgroundColor: task.completed ? theme.colors.success : theme.colors.accent }]} />
-                          ))}
-                        </View>
-                      </>
-                    ) : null}
-                  </Pressable>
-                );
-              })}
-            </View>
-
-            <View style={styles.occupiedHint}>
-              <View style={styles.occupiedHintHeader}>
-                <Ionicons name="information-circle-outline" size={18} color={theme.colors.buttonDark} />
-                <Text style={styles.occupiedHintTitle}>{formatReadableDate(pickerPreviewDate)}</Text>
-              </View>
-              <Text style={styles.occupiedHintLabel}>
-                {pickerOccupiedTasks.length > 0 ? 'Already occupied by:' : 'No tasks currently occupy this date.'}
-              </Text>
-              {pickerOccupiedTasks.length > 0 ? (
-                <ScrollView style={styles.occupiedTaskList} nestedScrollEnabled>
-                  {pickerOccupiedTasks.map((task) => (
-                    <View key={task.id} style={styles.occupiedTaskRow}>
-                      <View style={[styles.occupiedTaskDot, { backgroundColor: task.completed ? theme.colors.success : theme.colors.accent }]} />
-                      <View style={styles.occupiedTaskTextWrap}>
-                        <Text style={styles.occupiedTaskTitle}>{task.title}</Text>
-                        <Text style={styles.occupiedTaskDates}>
-                          {task.startDate && task.endDate
-                            ? `${task.startDate} to ${task.endDate}`
-                            : task.startDate
-                              ? `From ${task.startDate} onward`
-                              : `Deadline ${task.endDate}`}
-                        </Text>
-                      </View>
-                    </View>
-                  ))}
-                </ScrollView>
-              ) : null}
-            </View>
-
-            <View style={styles.dateModalActions}>
-              <Pressable style={styles.dateModalCancel} onPress={() => setActiveDatePicker(null)}>
-                <Text style={styles.dateModalCancelText}>Cancel</Text>
-              </Pressable>
-              <Pressable style={styles.dateModalConfirm} onPress={applyPickerSelection}>
-                <Text style={styles.dateModalConfirmText}>Use date</Text>
-                <Ionicons name="arrow-forward" size={16} color={theme.colors.textPrimary} />
-              </Pressable>
-            </View>
-          </View>
+          <Text style={styles.subtitle}>What would you like to work on today?</Text>
         </View>
-      </Modal>
 
-      <Modal
-        transparent
-        animationType="fade"
-        visible={activeAppPicker !== null}
-        onRequestClose={() => setActiveAppPicker(null)}>
-        <View style={styles.appModalBackdrop}>
-          <Pressable
-            accessibilityLabel="Close installed app picker"
-            style={StyleSheet.absoluteFill}
-            onPress={() => setActiveAppPicker(null)}
-          />
-          <View style={styles.appModalPanel}>
-            <View style={styles.appModalHeader}>
-              <View style={styles.appModalTitleWrap}>
-                <Text style={styles.dateModalEyebrow}>DAILY TASK</Text>
-                <Text style={styles.appModalTitle}>Choose an installed app</Text>
+        <Text style={styles.sectionTitle}>Explore your planner</Text>
+        <View style={styles.menuGrid}>
+          {menuItems.map((item) => (
+            <Pressable
+              key={item.title}
+              accessibilityRole="button"
+              accessibilityLabel={`${item.title}. ${item.description}`}
+              style={({ pressed }) => [styles.menuCard, pressed && styles.menuCardPressed]}
+              onPress={() => openMenuItem(item.route)}>
+              <View style={[styles.menuIcon, { backgroundColor: item.color }]}>
+                <Ionicons
+                  name={item.icon}
+                  size={23}
+                  color={item.title === 'People' ? theme.colors.accent : theme.colors.buttonDark}
+                />
               </View>
-              <Pressable style={styles.dateModalClose} onPress={() => setActiveAppPicker(null)}>
-                <Ionicons name="close" size={20} color={theme.colors.buttonDark} />
-              </Pressable>
-            </View>
-
-            <View style={styles.appSearchRow}>
-              <Ionicons name="search-outline" size={18} color={theme.colors.textSecondary} />
-              <TextInput
-                style={styles.appSearchInput}
-                placeholder="Search installed apps"
-                placeholderTextColor={theme.colors.textSecondary}
-                value={appSearchDraft}
-                onChangeText={setAppSearchDraft}
-                autoCapitalize="none"
-                autoCorrect={false}
+              <Text style={styles.menuTitle}>{item.title}</Text>
+              <Text style={styles.menuDescription}>{item.description}</Text>
+              <Ionicons
+                name="arrow-forward"
+                size={17}
+                color={theme.colors.buttonDark}
+                style={styles.menuArrow}
               />
-            </View>
-
-            <Pressable style={styles.noAppOption} onPress={() => selectInstalledApp(null)}>
-              <Ionicons name="walk-outline" size={20} color={theme.colors.buttonDark} />
-              <View style={styles.installedAppTextWrap}>
-                <Text style={styles.installedAppTitle}>Habit without an app</Text>
-                <Text style={styles.installedAppPackage}>For jogging, reading, and similar routines</Text>
-              </View>
             </Pressable>
+          ))}
+        </View>
 
-            {isLoadingApps ? (
-              <View style={styles.appPickerState}>
-                <ActivityIndicator color={theme.colors.buttonDark} />
-                <Text style={styles.appPickerStateText}>Loading apps on this device...</Text>
-              </View>
-            ) : appPickerError ? (
-              <Text style={styles.appPickerError}>{appPickerError}</Text>
-            ) : filteredInstalledApps.length > 0 ? (
-              <ScrollView style={styles.installedAppsList} keyboardShouldPersistTaps="handled">
-                {filteredInstalledApps.map((app) => (
-                  <Pressable
-                    key={app.packageName}
-                    style={styles.installedAppRow}
-                    onPress={() => selectInstalledApp(app)}>
-                    <View style={styles.installedAppIcon}>
-                      <Ionicons name="phone-portrait-outline" size={18} color={theme.colors.buttonDark} />
-                    </View>
-                    <View style={styles.installedAppTextWrap}>
-                      <Text style={styles.installedAppTitle}>{app.name}</Text>
-                      <Text style={styles.installedAppPackage}>{app.packageName}</Text>
-                    </View>
-                    <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
-                  </Pressable>
-                ))}
-              </ScrollView>
-            ) : (
-              <Text style={styles.appPickerStateText}>No matching launchable apps found.</Text>
-            )}
+        <View style={styles.progressCard}>
+          <View style={styles.progressHeading}>
+            <View>
+              <Text style={styles.progressEyebrow}>YOUR PROGRESS</Text>
+              <Text style={styles.progressTitle}>Keep it going</Text>
+            </View>
+            <Ionicons name="trending-up-outline" size={24} color={theme.colors.buttonDark} />
+          </View>
+          <View style={styles.statsRow}>
+            <View style={styles.stat}>
+              <Text style={styles.statNumber}>{userTasks.length}</Text>
+              <Text style={styles.statLabel}>Total tasks</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              <Text style={styles.statNumber}>{completedTasks}</Text>
+              <Text style={styles.statLabel}>Completed</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.stat}>
+              <Text style={[styles.statNumber, overdueTasks > 0 && styles.overdueNumber]}>
+                {overdueTasks}
+              </Text>
+              <Text style={styles.statLabel}>Overdue</Text>
+            </View>
           </View>
         </View>
-      </Modal>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -961,1030 +151,156 @@ const styles = StyleSheet.create({
     backgroundColor: theme.colors.background,
   },
   content: {
-    paddingHorizontal: 16,
-    paddingBottom: 48,
-  },
-  headerWrap: {
-    paddingTop: 16,
-    paddingBottom: 10,
-  },
-  heroCard: {
     padding: 20,
-    backgroundColor: theme.colors.primary,
-    borderRadius: 28,
-    shadowColor: theme.colors.canvas,
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 4,
+    paddingBottom: 36,
   },
-  profileRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 10,
+  heading: {
+    marginBottom: 26,
   },
-  activeUserPill: {
-    flex: 1,
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 9,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#EAF7FA',
-    borderRadius: theme.borderRadius.full,
-  },
-  avatarMark: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: theme.borderRadius.full,
-  },
-  avatarInitial: {
-    color: theme.colors.buttonDark,
-    fontSize: 14,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  activeUserTextWrap: {
-    flex: 1,
-  },
-  activeUserLabel: {
-    color: theme.colors.textSecondary,
-    fontSize: 9,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  activeUserName: {
-    marginTop: 1,
-    color: theme.colors.textPrimary,
-    fontSize: 12,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  profileButton: {
-    minHeight: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 5,
-    paddingHorizontal: 12,
-    backgroundColor: theme.colors.cardBackground,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: theme.borderRadius.full,
-  },
-  profileButtonText: {
-    color: theme.colors.buttonDark,
-    fontSize: 11,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  headerTopRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  segmentedControl: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 4,
-    backgroundColor: theme.colors.buttonDark,
-    borderRadius: theme.borderRadius.full,
-  },
-  segmentButton: {
-    minHeight: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 13,
-    borderRadius: theme.borderRadius.full,
-  },
-  segmentButtonActive: {
-    backgroundColor: theme.colors.cardBackground,
-  },
-  segmentText: {
-    color: theme.colors.cardBackground,
-    fontSize: 11,
-    fontFamily: 'Nunito_700Bold',
-  },
-  segmentTextActive: {
-    color: theme.colors.buttonDark,
-  },
-  scheduledToolbar: {
+  greetingRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: 12,
-    marginTop: 20,
-    marginBottom: 8,
   },
-  scheduledTitle: {
+  greetingCopy: {
+    flex: 1,
+  },
+  eyebrow: {
+    color: theme.colors.textSecondary,
+    fontSize: 10,
+    letterSpacing: 1,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  title: {
+    marginTop: 4,
+    color: theme.colors.textPrimary,
+    fontSize: 26,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  avatar: {
+    width: 46,
+    height: 46,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.primary,
+    borderRadius: theme.borderRadius.full,
+  },
+  avatarImage: {
+    width: 46,
+    height: 46,
+    borderRadius: theme.borderRadius.full,
+  },
+  subtitle: {
+    marginTop: 7,
+    color: theme.colors.textSecondary,
+    fontSize: 14,
+    fontFamily: 'Nunito_500Medium',
+  },
+  sectionTitle: {
+    marginBottom: 12,
     color: theme.colors.textPrimary,
     fontSize: 18,
     fontFamily: 'Nunito_800ExtraBold',
   },
-  scheduledCount: {
-    marginTop: 1,
-    color: theme.colors.textSecondary,
-    fontSize: 11,
-    fontFamily: 'Nunito_600SemiBold',
-  },
-  addTaskButton: {
-    minHeight: 40,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 16,
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.borderRadius.full,
-  },
-  addTaskButtonText: {
-    color: theme.colors.textPrimary,
-    fontSize: 12,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  userIconButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(255, 255, 255, 0.72)',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
-  },
-  eyebrow: {
-    color: theme.colors.buttonDark,
-    fontSize: 11,
-    fontFamily: 'Nunito_800ExtraBold',
-    letterSpacing: 1,
-  },
-  title: {
-    fontSize: 26,
-    fontFamily: 'Nunito_800ExtraBold',
-    color: theme.colors.textPrimary,
-    marginTop: 4,
-  },
-  subtitle: {
-    marginTop: 6,
-    color: theme.colors.buttonDark,
-    fontSize: 14,
-    fontFamily: 'Nunito_600SemiBold',
-  },
-  assignTitle: {
-    marginTop: 2,
-    color: theme.colors.buttonDark,
-    fontSize: 12,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  assignChipRow: {
+  menuGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
+    gap: 12,
   },
-  assignChip: {
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: '#F3F8FA',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  assignChipSelected: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  assignChipText: {
-    color: theme.colors.textSecondary,
-    fontSize: 12,
-    fontFamily: 'Nunito_700Bold',
-  },
-  assignChipTextSelected: {
-    color: theme.colors.textPrimary,
-  },
-  statsRow: {
-    marginTop: 18,
-    flexDirection: 'row',
-    gap: 8,
-  },
-  statCard: {
-    flex: 1,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255, 255, 255, 0.74)',
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.9)',
-  },
-  statCardTotal: {
-    backgroundColor: 'rgba(255, 255, 255, 0.74)',
-    borderColor: 'rgba(255, 255, 255, 0.9)',
-  },
-  statCardCompleted: {
-    backgroundColor: 'rgba(255, 255, 255, 0.74)',
-    borderColor: 'rgba(255, 255, 255, 0.9)',
-  },
-  statCardDeadline: {
-    backgroundColor: 'rgba(255, 255, 255, 0.74)',
-    borderColor: 'rgba(255, 255, 255, 0.9)',
-  },
-  statNumber: {
-    fontSize: 20,
-    fontFamily: 'Nunito_800ExtraBold',
-    color: theme.colors.textPrimary,
-  },
-  statLabel: {
-    marginTop: 2,
-    fontSize: 11,
-    fontFamily: 'Nunito_700Bold',
-    color: theme.colors.textSecondary,
-  },
-  overdueCard: {
-    marginTop: 12,
-    borderRadius: 16,
-    backgroundColor: 'rgba(220, 38, 38, 0.12)',
-    borderWidth: 1,
-    borderColor: 'rgba(220, 38, 38, 0.3)',
-    padding: 12,
-    gap: 10,
-  },
-  overdueHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 10,
-  },
-  overdueDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginTop: 3,
-    backgroundColor: '#dc2626',
-  },
-  overdueTextWrap: {
-    flex: 1,
-  },
-  overdueTitle: {
-    color: '#991b1b',
-    fontSize: 15,
-    fontWeight: '800',
-  },
-  overdueSubtitle: {
-    marginTop: 2,
-    color: '#b91c1c',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  overdueChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  overdueChip: {
-    borderRadius: theme.borderRadius.full,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    backgroundColor: 'rgba(220, 38, 38, 0.16)',
-    borderWidth: 1,
-    borderColor: 'rgba(220, 38, 38, 0.32)',
-  },
-  overdueChipText: {
-    color: '#991b1b',
-    fontSize: 11,
-    fontWeight: '700',
-  },
-  composerCard: {
-    marginTop: 16,
-    borderRadius: 24,
+  menuCard: {
+    width: '48%',
+    minHeight: 160,
+    padding: 14,
     backgroundColor: theme.colors.cardBackground,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: 16,
-    gap: 10,
-    shadowColor: theme.colors.canvas,
-    shadowOffset: { width: 0, height: 5 },
-    shadowOpacity: 0.06,
-    shadowRadius: 14,
-    elevation: 2,
-  },
-  taskInput: {
-    minHeight: 48,
-    borderRadius: 16,
-    backgroundColor: '#F7FBFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    color: theme.colors.textPrimary,
-    fontFamily: 'Nunito_600SemiBold',
-  },
-  milestoneRow: {
-    flexDirection: 'row',
-    gap: 8,
-  },
-  datePickerButton: {
-    flex: 1,
-    minHeight: 42,
-    borderRadius: 16,
-    backgroundColor: '#F7FBFC',
-    paddingHorizontal: 10,
-    paddingVertical: 9,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  datePickerButtonEmpty: {
-    backgroundColor: theme.colors.cardBackground,
-  },
-  datePickerText: {
-    color: theme.colors.textPrimary,
-    fontFamily: 'Nunito_600SemiBold',
-    flex: 1,
-  },
-  datePickerPlaceholderText: {
-    color: theme.colors.textSecondary,
-    fontFamily: 'Nunito_500Medium',
-  },
-  datePickerButtonTask: {
-    flex: 1,
-    minHeight: 38,
-    borderRadius: 10,
-    backgroundColor: '#F7FBFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  datePickerTextTask: {
-    color: theme.colors.textPrimary,
-    fontSize: 12,
-    fontFamily: 'Nunito_600SemiBold',
-    flex: 1,
-  },
-  datePickerPlaceholderTextTask: {
-    color: theme.colors.textSecondary,
-    fontFamily: 'Nunito_500Medium',
-  },
-  dateModalBackdrop: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 18,
-    backgroundColor: 'rgba(57, 83, 91, 0.48)',
-  },
-  dateModalPanel: {
-    maxHeight: '90%',
-    padding: 16,
-    backgroundColor: '#ffffff',
     borderRadius: theme.borderRadius.lg,
     borderWidth: 1,
     borderColor: theme.colors.border,
-    shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  dateModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 13,
-  },
-  dateModalTitleWrap: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  dateModalEyebrow: {
-    color: theme.colors.textSecondary,
-    fontSize: 10,
-    fontFamily: 'Nunito_800ExtraBold',
-    letterSpacing: 1,
-  },
-  dateModalTitle: {
-    marginTop: 4,
-    color: theme.colors.textPrimary,
-    fontSize: 19,
-    fontFamily: 'Nunito_800ExtraBold',
-    textTransform: 'capitalize',
-  },
-  dateModalClose: {
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F8FA',
-    borderRadius: theme.borderRadius.full,
-  },
-  dateModalMonthRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 10,
-  },
-  dateModalMonthTitle: {
-    color: theme.colors.textPrimary,
-    fontSize: 15,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  dateModalMonthControls: {
-    flexDirection: 'row',
-    gap: 6,
-  },
-  dateModalMonthButton: {
-    width: 32,
-    height: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F8FA',
-    borderRadius: theme.borderRadius.full,
-  },
-  datePickerWeekdays: {
-    flexDirection: 'row',
-    marginBottom: 3,
-  },
-  datePickerWeekday: {
-    width: `${100 / 7}%`,
-    color: theme.colors.textSecondary,
-    fontSize: 10,
-    fontFamily: 'Nunito_800ExtraBold',
-    textAlign: 'center',
-  },
-  datePickerGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-  },
-  datePickerDay: {
-    width: `${100 / 7}%`,
-    height: 40,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 7,
-  },
-  datePickerDaySelected: {
-    backgroundColor: theme.colors.primary,
-  },
-  datePickerDayNumber: {
-    color: theme.colors.textSecondary,
-    fontSize: 12,
-    fontFamily: 'Nunito_600SemiBold',
-  },
-  datePickerDayToday: {
-    color: theme.colors.buttonDark,
-    fontFamily: 'Nunito_900Black',
-  },
-  datePickerDayNumberSelected: {
-    color: theme.colors.textPrimary,
-  },
-  datePickerDots: {
-    height: 5,
-    flexDirection: 'row',
-    gap: 3,
-    marginTop: 1,
-  },
-  datePickerDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-  },
-  occupiedHint: {
-    marginTop: 11,
-    padding: 10,
-    backgroundColor: '#F7FBFC',
-    borderRadius: 16,
-  },
-  occupiedHintHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-  },
-  occupiedHintTitle: {
-    flex: 1,
-    color: theme.colors.textPrimary,
-    fontSize: 12,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  occupiedHintLabel: {
-    marginTop: 5,
-    color: theme.colors.textSecondary,
-    fontSize: 11,
-    fontFamily: 'Nunito_600SemiBold',
-  },
-  occupiedTaskList: {
-    maxHeight: 88,
-    marginTop: 5,
-  },
-  occupiedTaskRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 7,
-    paddingVertical: 4,
-  },
-  occupiedTaskDot: {
-    width: 7,
-    height: 7,
-    borderRadius: 4,
-  },
-  occupiedTaskTextWrap: {
-    flex: 1,
-  },
-  occupiedTaskTitle: {
-    color: theme.colors.textPrimary,
-    fontSize: 11,
-    fontFamily: 'Nunito_700Bold',
-  },
-  occupiedTaskDates: {
-    marginTop: 1,
-    color: theme.colors.textSecondary,
-    fontSize: 10,
-    fontFamily: 'Nunito_500Medium',
-  },
-  dateModalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    gap: 9,
-    marginTop: 13,
-  },
-  dateModalCancel: {
-    minWidth: 80,
-    minHeight: 38,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F8FA',
-    borderRadius: theme.borderRadius.full,
-  },
-  dateModalCancelText: {
-    color: theme.colors.buttonDark,
-    fontSize: 12,
-    fontFamily: 'Nunito_700Bold',
-  },
-  dateModalConfirm: {
-    minWidth: 108,
-    minHeight: 38,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6,
-    paddingHorizontal: 12,
-    backgroundColor: theme.colors.primary,
-    borderRadius: theme.borderRadius.full,
-  },
-  dateModalConfirmText: {
-    color: theme.colors.textPrimary,
-    fontSize: 12,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  errorText: {
-    color: theme.colors.accent,
-    fontFamily: 'Nunito_600SemiBold',
-    fontSize: 12,
-  },
-  primaryButtonGradient: {
-    borderRadius: theme.borderRadius.full,
-  },
-  primaryButton: {
-    flexDirection: 'row',
-    gap: 6,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 52,
-    borderRadius: theme.borderRadius.full,
-    backgroundColor: 'transparent',
-    paddingHorizontal: 12,
-  },
-  primaryButtonText: {
-    color: theme.colors.cardBackground,
-    fontSize: 16,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  taskCard: {
-    marginTop: 14,
-    borderRadius: 24,
-    backgroundColor: theme.colors.cardBackground,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    padding: 16,
     shadowColor: theme.colors.canvas,
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
     shadowRadius: 12,
-    elevation: 1,
+    elevation: 2,
   },
-  taskCardOverdue: {
-    backgroundColor: 'rgba(220, 38, 38, 0.08)',
-    borderColor: 'rgba(220, 38, 38, 0.28)',
+  menuCardPressed: {
+    opacity: 0.78,
+    transform: [{ scale: 0.98 }],
   },
-  taskTopRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-  },
-  taskTitleRow: {
-    flex: 1,
-    flexDirection: 'row',
-    gap: 10,
-    paddingRight: 10,
-  },
-  taskTextWrap: {
-    flex: 1,
-  },
-  taskTitle: {
-    fontSize: 17,
-    fontFamily: 'Nunito_800ExtraBold',
-    color: theme.colors.textPrimary,
-  },
-  taskMeta: {
-    marginTop: 3,
-    color: theme.colors.textSecondary,
-    fontFamily: 'Nunito_600SemiBold',
-    fontSize: 12,
-  },
-  taskOwnerText: {
-    marginTop: 2,
-    color: theme.colors.textSecondary,
-    fontFamily: 'Nunito_700Bold',
-    fontSize: 11,
-  },
-  dailyAppInputRow: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 11,
-    backgroundColor: '#F7FBFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 16,
-  },
-  dailyAppPickerTextWrap: {
-    flex: 1,
-    justifyContent: 'center',
-    paddingVertical: 6,
-  },
-  dailyAppPickerTitle: {
-    color: theme.colors.textPrimary,
-    fontSize: 13,
-    fontFamily: 'Nunito_600SemiBold',
-  },
-  dailyAppPickerSubtitle: {
-    marginTop: 2,
-    color: theme.colors.textSecondary,
-    fontSize: 10,
-    fontFamily: 'Nunito_500Medium',
-  },
-  appModalBackdrop: {
-    flex: 1,
-    justifyContent: 'center',
-    padding: 18,
-    backgroundColor: 'rgba(57, 83, 91, 0.48)',
-  },
-  appModalPanel: {
-    maxHeight: '85%',
-    padding: 16,
-    backgroundColor: theme.colors.cardBackground,
-    borderRadius: theme.borderRadius.lg,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    shadowColor: '#000000',
-    shadowOpacity: 0.08,
-    shadowRadius: 18,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 4,
-  },
-  appModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  appModalTitleWrap: {
-    flex: 1,
-    paddingRight: 10,
-  },
-  appModalTitle: {
-    marginTop: 4,
-    color: theme.colors.textPrimary,
-    fontSize: 19,
-    fontFamily: 'Nunito_800ExtraBold',
-  },
-  appSearchRow: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 11,
-    backgroundColor: '#F7FBFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 16,
-  },
-  appSearchInput: {
-    flex: 1,
-    paddingVertical: 8,
-    color: theme.colors.textPrimary,
-    fontSize: 13,
-    fontFamily: 'Nunito_500Medium',
-  },
-  noAppOption: {
-    minHeight: 54,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    marginTop: 10,
-    paddingHorizontal: 10,
-    backgroundColor: '#EAF7FA',
-    borderRadius: 16,
-  },
-  installedAppsList: {
-    flexGrow: 0,
-    marginTop: 9,
-  },
-  installedAppRow: {
-    minHeight: 58,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingHorizontal: 8,
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderBottomColor: theme.colors.border,
-  },
-  installedAppIcon: {
-    width: 34,
-    height: 34,
+  menuIcon: {
+    width: 42,
+    height: 42,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#EAF7FA',
-    borderRadius: 12,
-  },
-  installedAppTextWrap: {
-    flex: 1,
-  },
-  installedAppTitle: {
-    color: theme.colors.textPrimary,
-    fontSize: 13,
-    fontFamily: 'Nunito_700Bold',
-  },
-  installedAppPackage: {
-    marginTop: 2,
-    color: theme.colors.textSecondary,
-    fontSize: 10,
-    fontFamily: 'Nunito_500Medium',
-  },
-  appPickerState: {
-    minHeight: 80,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 8,
-  },
-  appPickerStateText: {
-    paddingVertical: 16,
-    color: theme.colors.textSecondary,
-    fontSize: 12,
-    fontFamily: 'Nunito_600SemiBold',
-    textAlign: 'center',
-  },
-  appPickerError: {
-    paddingVertical: 16,
-    color: theme.colors.accent,
-    fontSize: 12,
-    fontFamily: 'Nunito_600SemiBold',
-    textAlign: 'center',
-  },
-  dailyTimeButton: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    paddingHorizontal: 11,
-    backgroundColor: '#F7FBFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 16,
-  },
-  dailyTimeButtonTask: {
-    minHeight: 38,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    marginTop: 7,
-    paddingHorizontal: 10,
-    backgroundColor: '#F7FBFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    borderRadius: 16,
-  },
-  dailyTimeButtonText: {
-    flex: 1,
-    color: theme.colors.buttonDark,
-    fontSize: 12,
-    fontFamily: 'Nunito_700Bold',
-  },
-  dailyScheduleRow: {
-    minHeight: 42,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 8,
-    paddingHorizontal: 10,
-    backgroundColor: '#F7FBFC',
-    borderRadius: 16,
-  },
-  dailyScheduleLabelWrap: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  dailyScheduleLabel: {
-    color: theme.colors.textPrimary,
-    fontSize: 12,
-    fontFamily: 'Nunito_700Bold',
-  },
-  badgeRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 8,
-    flexWrap: 'wrap',
-  },
-  badge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: theme.borderRadius.full,
-    borderWidth: 1,
-  },
-  badgeNeutral: {
-    backgroundColor: '#F3F8FA',
-    borderColor: theme.colors.border,
-  },
-  badgeComplete: {
-    backgroundColor: '#EFF8F4',
-    borderColor: '#CDE8DA',
-  },
-  badgeDeadline: {
-    backgroundColor: '#EAF7FA',
-    borderColor: '#CDECF4',
-  },
-  badgeOverdue: {
-    backgroundColor: '#FFF2F0',
-    borderColor: '#F3D0CA',
-  },
-  badgeText: {
-    color: theme.colors.textPrimary,
-    fontSize: 11,
-    fontFamily: 'Nunito_700Bold',
-  },
-  badgeTextOverdue: {
-    color: theme.colors.accent,
-  },
-  iconButton: {
-    width: 30,
-    height: 30,
     borderRadius: 15,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#F3F8FA',
   },
-  progressTrack: {
-    marginTop: 10,
-    height: 8,
-    borderRadius: 8,
-    backgroundColor: theme.colors.border,
-    overflow: 'hidden',
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: theme.colors.success,
-  },
-  milestoneRowTask: {
-    marginTop: 10,
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  miniButtonWide: {
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#EAF7FA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: 10,
-  },
-  miniButtonText: {
-    color: theme.colors.buttonDark,
-    fontSize: 12,
-    fontFamily: 'Nunito_700Bold',
-  },
-  subtaskComposerRow: {
-    marginTop: 10,
-    flexDirection: 'row',
-    gap: 8,
-    alignItems: 'center',
-  },
-  subtaskInput: {
-    flex: 1,
-    borderRadius: 10,
-    backgroundColor: theme.colors.cardBackground,
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+  menuTitle: {
+    marginTop: 12,
     color: theme.colors.textPrimary,
-    fontFamily: 'Nunito_600SemiBold',
+    fontSize: 15,
+    fontFamily: 'Nunito_800ExtraBold',
   },
-  miniButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    backgroundColor: '#EAF7FA',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  subtaskRow: {
-    marginTop: 8,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    borderRadius: 10,
-    backgroundColor: '#F7FBFC',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  subtaskLeft: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    flex: 1,
-  },
-  subtaskText: {
-    color: theme.colors.textPrimary,
-    fontFamily: 'Nunito_600SemiBold',
-    flexShrink: 1,
-  },
-  subtaskRemove: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: '#F3F8FA',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  completedText: {
-    textDecorationLine: 'line-through',
-    color: theme.colors.textMuted,
-  },
-  emptyState: {
-    marginTop: 16,
-    textAlign: 'center',
+  menuDescription: {
+    marginTop: 3,
+    paddingRight: 4,
     color: theme.colors.textSecondary,
-    fontFamily: 'Nunito_600SemiBold',
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: 'Nunito_500Medium',
   },
-  periodRow: {
+  menuArrow: {
+    position: 'absolute',
+    top: 15,
+    right: 14,
+  },
+  progressCard: {
+    marginTop: 22,
+    padding: 18,
+    backgroundColor: theme.colors.primary,
+    borderRadius: 24,
+  },
+  progressHeading: {
     flexDirection: 'row',
     alignItems: 'center',
-    flexWrap: 'wrap',
-    gap: 8,
+    justifyContent: 'space-between',
   },
-  periodLabel: {
+  progressEyebrow: {
     color: theme.colors.buttonDark,
-    fontSize: 12,
-    fontWeight: '800',
+    fontSize: 10,
+    letterSpacing: 0.8,
+    fontFamily: 'Nunito_800ExtraBold',
   },
-  periodButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    backgroundColor: '#F7FBFC',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
-  },
-  periodButtonActive: {
-    backgroundColor: theme.colors.primary,
-    borderColor: theme.colors.primary,
-  },
-  periodButtonText: {
-    color: theme.colors.buttonDark,
-    fontSize: 12,
-    fontFamily: 'Nunito_700Bold',
-  },
-  periodButtonTextActive: {
+  progressTitle: {
+    marginTop: 2,
     color: theme.colors.textPrimary,
+    fontSize: 18,
+    fontFamily: 'Nunito_800ExtraBold',
   },
-  subtaskPeriodBadge: {
-    backgroundColor: '#F8F1E6',
-    borderWidth: 1,
-    borderColor: '#E8D8BA',
-    borderRadius: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 18,
   },
-  subtaskPeriodBadgeText: {
+  stat: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  statNumber: {
+    color: theme.colors.textPrimary,
+    fontSize: 21,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  overdueNumber: {
+    color: theme.colors.accent,
+  },
+  statLabel: {
+    marginTop: 2,
     color: theme.colors.buttonDark,
-    fontSize: 11,
+    fontSize: 10,
     fontFamily: 'Nunito_700Bold',
+  },
+  statDivider: {
+    width: 1,
+    height: 32,
+    backgroundColor: 'rgba(77, 98, 115, 0.25)',
   },
 });

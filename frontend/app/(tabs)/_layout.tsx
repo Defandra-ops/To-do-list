@@ -43,7 +43,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Planner',
+          title: 'Home',
+          tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="planner"
+        options={{
+          title: 'Tasks',
           tabBarIcon: ({ color }) => <TabBarIcon name="list-ul" color={color} />,
           headerRight: () => (
             <Link href="/modal" asChild>
@@ -71,11 +78,12 @@ export default function TabLayout() {
       <Tabs.Screen
         name="calendar"
         options={{
+          title: 'Calendar',
           href: null,
         }}
       />
       <Tabs.Screen
-        name="two"
+        name="users"
         options={{
           title: 'Users',
           tabBarIcon: ({ color }) => <TabBarIcon name="user" color={color} />,
