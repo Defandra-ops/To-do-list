@@ -15,8 +15,27 @@ const getLocalIsoDate = () => {
 };
 
 export default function OverviewRecordScreen() {
-  const { tasks: allTasks, users, activeUserId } = useTodoStore();
+  const { tasks: allTasks, users, activeUserId, notes, jobApplications } = useTodoStore();
   const activeUserName = users.find((user) => user.id === activeUserId)?.name ?? 'User';
+  const userNotes = useMemo(
+    () => notes.filter((note) => note.createdByUserId === activeUserId),
+    [activeUserId, notes]
+  );
+  const userApplications = useMemo(
+    () => jobApplications.filter((application) => application.createdByUserId === activeUserId),
+    [activeUserId, jobApplications]
+  );
+  const applicationStatusCounts = useMemo(
+    () => ({
+      applied: userApplications.filter((application) => application.status === 'Applied').length,
+      screening: userApplications.filter((application) => application.status === 'Screening').length,
+      interview: userApplications.filter((application) => application.status === 'Interview').length,
+      offer: userApplications.filter((application) => application.status === 'Offer').length,
+      rejected: userApplications.filter((application) => application.status === 'Rejected').length,
+      cancelled: userApplications.filter((application) => application.status === 'Cancelled').length,
+    }),
+    [userApplications]
+  );
   const tasks = useMemo(
     () => allTasks.filter(
       (task) =>
@@ -161,8 +180,64 @@ export default function OverviewRecordScreen() {
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.title}>{activeUserName}&apos;s Progress</Text>
-        <Text style={styles.subtitle}>Track your completed, ongoing, and overdue tasks.</Text>
+        <Text style={styles.title}>{activeUserName}&apos;s Overview</Text>
+        <Text style={styles.subtitle}>See your activity across tasks, notes, and job applications.</Text>
+
+        <Text style={styles.chartTitle}>Your activity</Text>
+        <View style={styles.activityGrid}>
+          <View style={styles.activityCard}>
+            <Text style={styles.activityValue}>{tasks.length}</Text>
+            <Text style={styles.activityLabel}>Tasks</Text>
+            <Text style={styles.activityDetail}>{completedTasks.length} completed</Text>
+          </View>
+          <View style={styles.activityCard}>
+            <Text style={styles.activityValue}>{allSubtasks.length}</Text>
+            <Text style={styles.activityLabel}>Subtasks</Text>
+            <Text style={styles.activityDetail}>
+              {subtaskStats.completed.length} completed
+            </Text>
+          </View>
+          <View style={styles.activityCard}>
+            <Text style={styles.activityValue}>{userNotes.length}</Text>
+            <Text style={styles.activityLabel}>Notes created</Text>
+            <Text style={styles.activityDetail}>Saved notes</Text>
+          </View>
+          <View style={styles.activityCard}>
+            <Text style={styles.activityValue}>{userApplications.length}</Text>
+            <Text style={styles.activityLabel}>Applications</Text>
+            <Text style={styles.activityDetail}>
+              {applicationStatusCounts.applied} applied · {applicationStatusCounts.cancelled} cancelled
+            </Text>
+          </View>
+          <View style={styles.activityCard}>
+            <Text style={styles.activityValue}>{users.length}</Text>
+            <Text style={styles.activityLabel}>Profiles</Text>
+            <Text style={styles.activityDetail}>In this planner</Text>
+          </View>
+        </View>
+
+        <View style={styles.applicationSummaryCard}>
+          <Text style={styles.sectionTitle}>Job application status</Text>
+          {([
+            ['Applied', applicationStatusCounts.applied, theme.colors.primary],
+            ['Screening', applicationStatusCounts.screening, '#73A7C0'],
+            ['Interview', applicationStatusCounts.interview, theme.colors.warning],
+            ['Offer', applicationStatusCounts.offer, theme.colors.success],
+            ['Rejected', applicationStatusCounts.rejected, theme.colors.accent],
+            ['Cancelled', applicationStatusCounts.cancelled, theme.colors.textMuted],
+          ] as const).map(([label, count, color]) => (
+            <View key={label} style={styles.applicationStatusRow}>
+              <View style={styles.applicationStatusLabelWrap}>
+                <View style={[styles.applicationStatusDot, { backgroundColor: color }]} />
+                <Text style={styles.applicationStatusLabel}>{label}</Text>
+              </View>
+              <Text style={styles.applicationStatusCount}>{count}</Text>
+            </View>
+          ))}
+          {userApplications.length === 0 ? (
+            <Text style={styles.applicationSummaryEmpty}>No job applications recorded yet.</Text>
+          ) : null}
+        </View>
 
         <Text style={styles.chartTitle}>Big Tasks</Text>
         <Animated.View style={[styles.diagramCard, { opacity: progressAnim }]}>
@@ -249,6 +324,80 @@ const styles = StyleSheet.create({
   title: { marginTop: 8, color: theme.colors.textPrimary, fontSize: 26, fontFamily: 'Nunito_800ExtraBold' },
   subtitle: { marginTop: 6, color: theme.colors.textSecondary, fontSize: 15, fontFamily: 'Nunito_500Medium' },
   chartTitle: { marginTop: 20, color: theme.colors.buttonDark, fontSize: 19, fontFamily: 'Nunito_800ExtraBold' },
+  activityGrid: {
+    marginTop: 12,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+  },
+  activityCard: {
+    width: '48%',
+    minHeight: 105,
+    padding: 14,
+    borderRadius: 16,
+    backgroundColor: theme.colors.cardBackground,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  activityValue: {
+    color: theme.colors.textPrimary,
+    fontSize: 25,
+    fontFamily: 'Nunito_900Black',
+  },
+  activityLabel: {
+    marginTop: 2,
+    color: theme.colors.buttonDark,
+    fontSize: 13,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  activityDetail: {
+    marginTop: 3,
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+  applicationSummaryCard: {
+    marginTop: 16,
+    padding: 16,
+    borderRadius: 18,
+    backgroundColor: theme.colors.cardBackground,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  applicationStatusRow: {
+    minHeight: 36,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderBottomWidth: 1,
+    borderBottomColor: theme.colors.border,
+  },
+  applicationStatusLabelWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  applicationStatusDot: {
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+  },
+  applicationStatusLabel: {
+    color: theme.colors.textSecondary,
+    fontSize: 13,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+  applicationStatusCount: {
+    color: theme.colors.textPrimary,
+    fontSize: 14,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  applicationSummaryEmpty: {
+    marginTop: 10,
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold',
+  },
   diagramCard: {
     marginTop: 12,
     borderRadius: theme.borderRadius.lg,

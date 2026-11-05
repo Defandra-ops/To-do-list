@@ -3,12 +3,12 @@
 ## Todo Planner
 
 **Status:** Draft based on current implementation  
-**Last reviewed:** 2026-11-04
+**Last reviewed:** 2026-11-05
 **Platforms:** Android (primary), web (partial); iOS project support is present but some features are Android-only.
 
 ## 1. Product Summary
 
-Todo Planner is a task and routine tracking app for individuals or small groups. Users can create tasks with date ranges, assign people, add subtasks, track progress, and receive local reminders. Daily tasks can be associated with an installed Android app, such as Duolingo, or with an offline habit, such as jogging. Task state is saved on-device and can optionally synchronize through a Docker-hosted backend and PostgreSQL.
+Todo Planner is a personal planning app for task and routine management, notes, and job-application tracking. Users can create and edit tasks with date ranges, assign people, add and edit subtasks, track progress, and receive local reminders. Notes and job applications are managed from Home. Daily tasks can be associated with an installed Android app, such as Duolingo, or with an offline habit, such as jogging. App state is saved on-device and can optionally synchronize through a Docker-hosted backend and PostgreSQL.
 
 ## 2. Problem and Goals
 
@@ -20,6 +20,7 @@ Users need a lightweight place to plan larger tasks, break them into smaller act
 - Schedule task start dates and deadlines, and see existing task occupancy while choosing dates.
 - Support daily routines with an optional installed-app association and reminders.
 - Track task progress independently for each assigned user in Planner and Overview.
+- Keep personal notes and manage job applications through their full lifecycle.
 - Support editable user profiles with name, age, photo, and hobbies/daily routines.
 - Keep task data available offline on each device.
 - Optionally synchronize app state through the backend and PostgreSQL.
@@ -45,7 +46,7 @@ Users need a lightweight place to plan larger tasks, break them into smaller act
 
 1. Show the welcome screen whenever the app is opened from a cold start.
 2. Tapping anywhere on the welcome screen opens the Home menu.
-3. Home provides navigation to Tasks, Calendar, Progress, and People, plus a small task summary.
+3. Home provides navigation to Tasks, Calendar, Progress, and People, a task summary, Notes access beneath the summary, and a job-application tracker.
 4. Open Tasks to create or manage tasks; do not show the task-creation form immediately after welcome.
 
 ### Create a task
@@ -71,6 +72,13 @@ The separate Calendar route remains in the project for notification navigation b
 2. The task remains completed for the current local day.
 3. On the next local day, the routine and its subtasks become incomplete again.
 
+### Manage notes and job applications
+
+1. Open Notes from the Home dashboard beneath the Progress summary to create, edit, or delete notes.
+2. Use the job-application tracker on Home to add a company, role, status, application date, optional job link, and notes.
+3. Edit an application as its status changes, or remove it when it is no longer being tracked.
+4. Notes and applications persist/synchronize with the rest of app state. Notes show their creating profile; applications are scoped to the active profile.
+
 ## 5. Functional Requirements
 
 ### FR-01: Welcome screen
@@ -80,11 +88,13 @@ The separate Calendar route remains in the project for notification navigation b
 - Do not persist a completed-welcome flag; returning to the app from a cold start shows the welcome screen again.
 - Keep user/task persistence independent from the welcome-screen behavior.
 
-### FR-09: Home menu
+### FR-09: Home dashboard
 
 - After the welcome screen, open a Home dashboard rather than the task-creation form.
 - Provide clear menu entries for My tasks, Calendar, Progress, and People.
 - Show total, completed, and overdue task counts on Home.
+- Show a Notes entry below the Progress summary and People navigation; Notes must not occupy a bottom tab.
+- Show the active profile's job-application tracker below the Notes entry, including application count, interview count, and application cards.
 - Selecting a menu entry opens the corresponding existing feature.
 
 ### FR-02: User profiles
@@ -99,7 +109,7 @@ The separate Calendar route remains in the project for notification navigation b
 ### FR-03: Task creation and management
 
 - A task includes a required title, completion state, optional start date/deadline, creator, deadline editor, assignees, participants, and subtasks.
-- Users can create and delete tasks, toggle task completion, edit date milestones, and add, toggle, or remove subtasks.
+- Users can create and delete tasks; edit task titles and assignees; toggle task completion; edit dates, daily recurrence, time, and app association; and add, edit, toggle, or remove subtasks.
 - Each assigned user has independent task and subtask completion state.
 - Toggling a task synchronizes that user's subtasks to the same completion state without changing other assignees' progress.
 - A task's shared completed status is true only when every assignee has completed it.
@@ -135,6 +145,9 @@ The separate Calendar route remains in the project for notification navigation b
 
 ### FR-07: Overview and progress
 
+- Provide a cross-feature activity summary for the active local profile, including assigned tasks, subtasks, notes created, tracked applications, and profile count.
+- Summarize the active profile's current job-application statuses, including Applied, Screening, Interview, Offer, Rejected, and Cancelled.
+- Derive counts from persisted current records; removing a note or application removes it from the corresponding count. This is not an immutable event/audit history.
 - Show total, completed, failed/overdue, and ongoing task counts in an animated task progress ring.
 - Show a subtask progress chart with Daily, Weekly, and Monthly view controls.
 - Show separate records for completed and failed tasks, including creator, assignees, and deadline.
@@ -144,6 +157,7 @@ The separate Calendar route remains in the project for notification navigation b
 
 - Persist user profiles, active user ID, tasks, per-user task/subtask progress, app associations, and subtasks on-device in AsyncStorage.
 - When the backend is reachable, fetch and save the complete app state through `/state`.
+- Include notes and job applications in the complete local and synchronized app state.
 - Poll the backend for state changes approximately every 2.5 seconds and save local changes after a short debounce.
 - If the backend is unavailable, retain the local state and keep the app usable offline.
 - The backend stores the current app state as one JSONB payload in the singleton `app_state` row. This is shared state, not per-device or per-user isolated server storage.
@@ -155,6 +169,26 @@ The separate Calendar route remains in the project for notification navigation b
 - Preserve per-user progress when switching profiles, restarting offline, or synchronizing app state.
 - Migrate existing shared completion status to each existing assignee when older task data is loaded.
 - Recalculate the task's shared completion status from all assignees; do not overwrite other users' individual progress when one user checks off a task.
+
+### FR-11: Notes
+
+- Users can create, view, edit, and delete notes with a required title and body.
+- Record the creating local profile and created/updated timestamps for each note.
+- Show all saved notes in the Notes screen opened from Home.
+- Persist notes in AsyncStorage and include them in the existing `/state` synchronization payload.
+- Normalize older app-state payloads that do not contain notes without breaking existing tasks or profiles.
+
+### FR-12: Job-application tracker
+
+- Show a job-application tracker on Home, scoped to the active local profile.
+- A job application has required company and role fields; status (`Applied`, `Screening`, `Interview`, `Offer`, `Rejected`, or `Cancelled`); optional application date, job-posting URL, and notes.
+- Allow users to create, view, edit (including status changes), and delete applications.
+- Default new application status to `Applied` and date to the current local date.
+- Show the number of tracked applications and interviews, plus each application's status and available details.
+- Allow users to set an application status to `Cancelled`, distinct from `Rejected`.
+- Allow exporting the active profile's job applications as a UTF-8 CSV spreadsheet that opens in Excel, through browser download on web and the system share sheet on native platforms.
+- Persist application records in AsyncStorage and include them in the existing `/state` synchronization payload.
+- Normalize older app-state payloads that do not contain job applications without breaking existing records.
 
 ## 6. Data Model
 
@@ -178,6 +212,16 @@ The separate Calendar route remains in the project for notification navigation b
 
 - `Task.progressByUserId[userId]`: `completed`, `completedOn`, and `subtasks[subtaskId]`.
 - `Task.completed` and each `Subtask.completed` remain aggregate compatibility fields, derived from all assignees' progress.
+
+### Note
+
+- `id`, `title`, `content`, `createdByUserId`, `createdAt`, `updatedAt`
+
+### Job application
+
+- `id`, `company`, `role`, `status`, `appliedDate`, `jobUrl`, `notes`
+- `createdByUserId`, `createdAt`, `updatedAt`
+- `status` is one of `Applied`, `Screening`, `Interview`, `Offer`, or `Rejected`.
 
 ### PostgreSQL tables
 
@@ -207,6 +251,13 @@ The separate Calendar route remains in the project for notification navigation b
 - Every cold app launch shows the welcome screen; tapping it opens Home.
 - Home opens with feature navigation and task counts, without displaying the task-creation form.
 - My tasks opens the existing task planner; Calendar, Progress, and People menu entries open their respective features.
+- Notes is accessible from Home below the Progress summary and People menu entry and is absent from the bottom tab bar.
+- Users can create, edit, and delete notes; changes persist through app restart and state synchronization.
+- Users can edit task titles and assignees, change date and daily-task settings, and add, edit, complete, or delete subtasks.
+- Home's job tracker shows only the active profile's applications and supports adding, editing, changing status, and deleting records.
+- Users can export the active profile's job tracker to an Excel-compatible CSV file.
+- Overview summarizes active-profile task/subtask, notes, and job-application totals, including counts for each application status and Cancelled.
+- Job-application details and statuses persist through app restart and state synchronization.
 - A user can create a regular task, assign dates/users, add subtasks, complete it, and find its record in Overview.
 - A user can create a Daily task and associate a launcher-visible installed Android app, or select a habit without an app.
 - The selected app label and package ID persist after app restart and appear in the task card.
@@ -257,3 +308,11 @@ These are proposed follow-up items, not part of the current implementation.
 - Gallery photos are copied to app-private storage so the profile picture remains available after the picker cache is cleared.
 - Tasks and subtasks retain independent completion state for each assignee. Planner, Calendar, Home counts, and Overview are scoped to the active profile.
 - Profile metadata and per-user progress are persisted in the existing app-state record. Gallery image files remain device-local and are not synchronized as image uploads.
+
+## 13. Notes and Job-Application Tracker
+
+- Notes are managed on the Notes screen opened from the Home dashboard; Notes is not a bottom tab.
+- Each local profile sees and manages its own job applications in the Home tracker.
+- Job applications support company, role, application status, application date, job-posting URL, and free-form notes, with create, edit, and delete operations.
+- Notes are available across local profiles and identify their creating profile; job applications are scoped to the active profile.
+- Notes and job applications share the app's AsyncStorage and `/state` persistence/synchronization path.

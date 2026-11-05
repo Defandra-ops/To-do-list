@@ -1,10 +1,29 @@
 import { Ionicons } from '@expo/vector-icons';
+import * as FileSystem from 'expo-file-system/legacy';
+import * as Sharing from 'expo-sharing';
 import { useRouter } from 'expo-router';
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { useState } from 'react';
+import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getUserTaskProgress, useTodoStore } from '@/components/TodoStore';
+import {
+  getUserTaskProgress,
+  useTodoStore,
+  type JobApplication,
+  type JobApplicationStatus,
+} from '@/components/TodoStore';
 import { theme } from '@/constants/Colors';
+
+type ApplicationDraft = Pick<JobApplication, 'company' | 'role' | 'status' | 'appliedDate' | 'jobUrl' | 'notes'>;
+
+const applicationStatuses: JobApplicationStatus[] = [
+  'Applied',
+  'Screening',
+  'Interview',
+  'Offer',
+  'Rejected',
+  'Cancelled',
+];
 
 const menuItems = [
   {
@@ -45,9 +64,36 @@ const getLocalIsoDate = () => {
   return `${year}-${month}-${day}`;
 };
 
+const escapeCsvCell = (value: string) => {
+  const safeValue = /^[\t\r\n ]*[=+\-@]/.test(value) ? `'${value}` : value;
+  return `"${safeValue.replace(/"/g, '""')}"`;
+};
+
 export default function HomeScreen() {
   const router = useRouter();
-  const { tasks, users, activeUserId } = useTodoStore();
+  const {
+    tasks,
+    users,
+    activeUserId,
+    jobApplications,
+    addJobApplication,
+    updateJobApplication,
+    removeJobApplication,
+  } = useTodoStore();
+  const [isApplicationTrackerVisible, setIsApplicationTrackerVisible] = useState(false);
+  const [isApplicationFormVisible, setIsApplicationFormVisible] = useState(false);
+  const [editingApplicationId, setEditingApplicationId] = useState<string | null>(null);
+  const [isExportingApplications, setIsExportingApplications] = useState(false);
+  const [applicationExportError, setApplicationExportError] = useState('');
+  const [applicationDraft, setApplicationDraft] = useState<ApplicationDraft>({
+    company: '',
+    role: '',
+    status: 'Applied',
+    appliedDate: getLocalIsoDate(),
+    jobUrl: '',
+    notes: '',
+  });
+  const [applicationError, setApplicationError] = useState('');
   const activeUser = users.find((user) => user.id === activeUserId);
   const activeUserName = activeUser?.name ?? 'Planner';
   const userTasks = tasks.filter(
@@ -60,9 +106,140 @@ export default function HomeScreen() {
   const overdueTasks = userTasks.filter(
     (task) => !getUserTaskProgress(task, activeUserId).completed && Boolean(task.endDate) && task.endDate < today
   ).length;
+  const userApplications = jobApplications.filter((application) => application.createdByUserId === activeUserId);
+  const interviewCount = userApplications.filter((application) => application.status === 'Interview').length;
 
   const openMenuItem = (route: (typeof menuItems)[number]['route']) => {
     router.push(route as never);
+  };
+
+  const openNewApplicationForm = () => {
+    setIsApplicationTrackerVisible(false);
+    setEditingApplicationId(null);
+    setIsApplicationFormVisible(true);
+    setApplicationDraft({
+      company: '',
+      role: '',
+      status: 'Applied',
+      appliedDate: getLocalIsoDate(),
+      jobUrl: '',
+      notes: '',
+    });
+    setApplicationError('');
+  };
+
+  const openEditApplicationForm = (application: JobApplication) => {
+    setIsApplicationTrackerVisible(false);
+    setEditingApplicationId(application.id);
+    setIsApplicationFormVisible(true);
+    setApplicationDraft({
+      company: application.company,
+      role: application.role,
+      status: application.status,
+      appliedDate: application.appliedDate,
+      jobUrl: application.jobUrl,
+      notes: application.notes,
+    });
+    setApplicationError('');
+  };
+
+  const closeApplicationForm = () => {
+    setIsApplicationFormVisible(false);
+    setEditingApplicationId(null);
+    setApplicationError('');
+  };
+
+  const openApplicationTracker = () => {
+    setIsApplicationTrackerVisible(true);
+  };
+
+  const closeApplicationTracker = () => {
+    setIsApplicationTrackerVisible(false);
+    setApplicationExportError('');
+  };
+
+  const exportApplications = async () => {
+    if (userApplications.length === 0) {
+      setApplicationExportError('Add a job application before exporting.');
+      return;
+    }
+
+    setIsExportingApplications(true);
+    setApplicationExportError('');
+    try {
+      const rows = [
+        ['Company', 'Role', 'Status', 'Applied Date', 'Job URL', 'Notes'],
+        ...userApplications.map((application) => [
+          application.company,
+          application.role,
+          application.status,
+          application.appliedDate,
+          application.jobUrl,
+          application.notes,
+        ]),
+      ];
+      const csv = `\uFEFF${rows.map((row) => row.map(escapeCsvCell).join(',')).join('\r\n')}`;
+      const filename = `job-applications-${getLocalIsoDate()}.csv`;
+
+      if (Platform.OS === 'web') {
+        const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+        return;
+      }
+
+      if (!FileSystem.documentDirectory) {
+        throw new Error('App storage is unavailable for exporting the job tracker.');
+      }
+      if (!(await Sharing.isAvailableAsync())) {
+        throw new Error('Sharing files is not available on this device.');
+      }
+
+      const fileUri = `${FileSystem.documentDirectory}${filename}`;
+      await FileSystem.writeAsStringAsync(fileUri, csv, { encoding: FileSystem.EncodingType.UTF8 });
+      await Sharing.shareAsync(fileUri, {
+        mimeType: 'text/csv',
+        dialogTitle: 'Export job tracker',
+        UTI: 'public.comma-separated-values-text',
+      });
+    } catch (error) {
+      console.error('Failed to export job applications:', error);
+      setApplicationExportError('Could not export the job tracker. Please try again.');
+    } finally {
+      setIsExportingApplications(false);
+    }
+  };
+
+  const saveApplication = () => {
+    if (!applicationDraft.company.trim() || !applicationDraft.role.trim()) {
+      setApplicationError('Company and role are required.');
+      return;
+    }
+    if (applicationDraft.appliedDate && !/^\d{4}-\d{2}-\d{2}$/.test(applicationDraft.appliedDate)) {
+      setApplicationError('Application date must use YYYY-MM-DD.');
+      return;
+    }
+
+    if (editingApplicationId) {
+      updateJobApplication(editingApplicationId, applicationDraft);
+    } else {
+      addJobApplication(applicationDraft);
+    }
+    closeApplicationForm();
+  };
+
+  const updateApplicationDraft = (field: keyof ApplicationDraft, value: string) => {
+    setApplicationDraft((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+    setApplicationError('');
   };
 
   return (
@@ -140,7 +317,245 @@ export default function HomeScreen() {
             </View>
           </View>
         </View>
+
+        <View style={styles.featureCards}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open Notes"
+            style={({ pressed }) => [styles.featureCard, pressed && styles.menuCardPressed]}
+            onPress={() => router.push('/(tabs)/notes' as never)}>
+            <View style={styles.featureCardTop}>
+              <View style={[styles.menuIcon, styles.notesIcon]}>
+                <Ionicons name="document-text-outline" size={22} color={theme.colors.buttonDark} />
+              </View>
+              <Ionicons name="arrow-forward" size={17} color={theme.colors.buttonDark} />
+            </View>
+            <Text style={styles.featureCardTitle}>Notes</Text>
+            <Text style={styles.featureCardDescription}>Save ideas and details for later.</Text>
+          </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add or view job applications"
+            style={({ pressed }) => [styles.featureCard, pressed && styles.menuCardPressed]}
+            onPress={openApplicationTracker}>
+            <View style={styles.featureCardTop}>
+              <View style={[styles.menuIcon, styles.careerIcon]}>
+                <Ionicons name="briefcase-outline" size={22} color={theme.colors.buttonDark} />
+              </View>
+              <Ionicons name="arrow-forward" size={17} color={theme.colors.buttonDark} />
+            </View>
+            <Text style={styles.featureCardTitle}>Job tracker</Text>
+            <Text style={styles.featureCardDescription}>
+              {userApplications.length} application{userApplications.length === 1 ? '' : 's'} · {interviewCount} interview{interviewCount === 1 ? '' : 's'}
+            </Text>
+          </Pressable>
+        </View>
+
       </ScrollView>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={isApplicationTrackerVisible}
+        onRequestClose={closeApplicationTracker}>
+        <View style={styles.applicationModalBackdrop}>
+          <Pressable
+            accessibilityLabel="Close job tracker"
+            style={StyleSheet.absoluteFill}
+            onPress={closeApplicationTracker}
+          />
+          <View style={styles.applicationTrackerPanel}>
+            <View style={styles.applicationsHeading}>
+              <View style={styles.applicationsHeadingCopy}>
+                <Text style={styles.progressEyebrow}>CAREER TRACKER</Text>
+                <Text style={styles.applicationsTitle}>Job tracker</Text>
+              </View>
+              <View style={styles.trackerHeaderActions}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Export job applications to Excel-compatible CSV"
+                  style={[styles.exportApplicationButton, isExportingApplications && styles.disabledAction]}
+                  disabled={isExportingApplications}
+                  onPress={() => void exportApplications()}>
+                  <Ionicons
+                    name={isExportingApplications ? 'hourglass-outline' : 'download-outline'}
+                    size={17}
+                    color={theme.colors.buttonDark}
+                  />
+                  <Text style={styles.exportApplicationButtonText}>
+                    {isExportingApplications ? 'Exporting' : 'Excel'}
+                  </Text>
+                </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Add job application"
+                  style={styles.addApplicationButton}
+                  onPress={openNewApplicationForm}>
+                  <Ionicons name="add" size={21} color={theme.colors.cardBackground} />
+                </Pressable>
+              </View>
+            </View>
+            {applicationExportError ? (
+              <Text style={styles.applicationError}>{applicationExportError}</Text>
+            ) : null}
+            <ScrollView
+              style={styles.applicationTrackerList}
+              contentContainerStyle={styles.applicationTrackerListContent}
+              keyboardShouldPersistTaps="handled">
+              {userApplications.map((application) => (
+                <View key={application.id} style={styles.applicationCard}>
+                  <View style={styles.applicationCardHeader}>
+                    <View style={styles.applicationIdentity}>
+                      <Text style={styles.applicationRole}>{application.role}</Text>
+                      <Text style={styles.applicationCompany}>{application.company}</Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.applicationStatusBadge,
+                        (application.status === 'Rejected' || application.status === 'Cancelled') &&
+                          styles.applicationStatusRejected,
+                        application.status === 'Offer' && styles.applicationStatusOffer,
+                        application.status === 'Interview' && styles.applicationStatusInterview,
+                      ]}>
+                      <Text style={styles.applicationStatusText}>{application.status}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.applicationDate}>
+                    {application.appliedDate ? `Applied ${application.appliedDate}` : 'Application date not set'}
+                  </Text>
+                  {application.jobUrl ? (
+                    <Text style={styles.applicationUrl} numberOfLines={1}>{application.jobUrl}</Text>
+                  ) : null}
+                  {application.notes ? (
+                    <Text style={styles.applicationNotes} numberOfLines={3}>{application.notes}</Text>
+                  ) : null}
+                  <View style={styles.applicationActions}>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Edit ${application.role} application`}
+                      style={styles.applicationAction}
+                      onPress={() => openEditApplicationForm(application)}>
+                      <Ionicons name="create-outline" size={16} color={theme.colors.buttonDark} />
+                      <Text style={styles.applicationActionText}>Edit</Text>
+                    </Pressable>
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Delete ${application.role} application`}
+                      style={styles.applicationAction}
+                      onPress={() => removeJobApplication(application.id)}>
+                      <Ionicons name="trash-outline" size={16} color={theme.colors.accent} />
+                      <Text style={[styles.applicationActionText, styles.deleteActionText]}>Delete</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))}
+              {userApplications.length === 0 ? (
+                <View style={styles.applicationsEmpty}>
+                  <Ionicons name="briefcase-outline" size={25} color={theme.colors.textMuted} />
+                  <Text style={styles.applicationsEmptyText}>No applications yet. Tap + to add one.</Text>
+                </View>
+              ) : null}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={isApplicationFormVisible}
+        onRequestClose={closeApplicationForm}>
+        <View style={styles.applicationModalBackdrop}>
+          <Pressable accessibilityLabel="Close application editor" style={StyleSheet.absoluteFill} onPress={closeApplicationForm} />
+          <ScrollView
+            style={styles.applicationModalScroll}
+            contentContainerStyle={styles.applicationModalPanel}
+            keyboardShouldPersistTaps="handled">
+            <Text style={styles.applicationModalTitle}>
+              {editingApplicationId ? 'Edit application' : 'Track a job application'}
+            </Text>
+            <TextInput
+              accessibilityLabel="Company"
+              style={styles.applicationInput}
+              placeholder="Company"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={applicationDraft.company}
+              onChangeText={(value) => updateApplicationDraft('company', value)}
+              maxLength={100}
+            />
+            <TextInput
+              accessibilityLabel="Role"
+              style={styles.applicationInput}
+              placeholder="Role or job title"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={applicationDraft.role}
+              onChangeText={(value) => updateApplicationDraft('role', value)}
+              maxLength={120}
+            />
+            <Text style={styles.applicationFieldLabel}>Status</Text>
+            <View style={styles.applicationStatusOptions}>
+              {applicationStatuses.map((status) => (
+                <Pressable
+                  key={status}
+                  style={[
+                    styles.applicationStatusOption,
+                    applicationDraft.status === status && styles.applicationStatusOptionSelected,
+                  ]}
+                  onPress={() => updateApplicationDraft('status', status)}>
+                  <Text
+                    style={[
+                      styles.applicationStatusOptionText,
+                      applicationDraft.status === status && styles.applicationStatusOptionTextSelected,
+                    ]}>
+                    {status}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
+            <TextInput
+              accessibilityLabel="Application date"
+              style={styles.applicationInput}
+              placeholder="Application date (YYYY-MM-DD)"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={applicationDraft.appliedDate}
+              onChangeText={(value) => updateApplicationDraft('appliedDate', value)}
+            />
+            <TextInput
+              accessibilityLabel="Job posting link"
+              style={styles.applicationInput}
+              placeholder="Job posting link (optional)"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={applicationDraft.jobUrl}
+              onChangeText={(value) => updateApplicationDraft('jobUrl', value)}
+              autoCapitalize="none"
+              keyboardType="url"
+            />
+            <TextInput
+              accessibilityLabel="Application notes"
+              style={[styles.applicationInput, styles.applicationNotesInput]}
+              placeholder="Notes (optional)"
+              placeholderTextColor={theme.colors.textSecondary}
+              value={applicationDraft.notes}
+              onChangeText={(value) => updateApplicationDraft('notes', value)}
+              multiline
+              textAlignVertical="top"
+              maxLength={2000}
+            />
+            {applicationError ? <Text style={styles.applicationError}>{applicationError}</Text> : null}
+            <View style={styles.applicationModalActions}>
+              <Pressable style={styles.applicationCancelButton} onPress={closeApplicationForm}>
+                <Text style={styles.applicationCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.applicationSaveButton} onPress={saveApplication}>
+                <Text style={styles.applicationSaveText}>
+                  {editingApplicationId ? 'Save changes' : 'Add application'}
+                </Text>
+              </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -302,5 +717,314 @@ const styles = StyleSheet.create({
     width: 1,
     height: 32,
     backgroundColor: 'rgba(77, 98, 115, 0.25)',
+  },
+  featureCards: {
+    marginTop: 16,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  featureCard: {
+    flex: 1,
+    minWidth: '46%',
+    minHeight: 145,
+    padding: 14,
+    backgroundColor: theme.colors.cardBackground,
+    borderRadius: theme.borderRadius.lg,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    shadowColor: theme.colors.canvas,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 2,
+  },
+  featureCardTop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+  },
+  notesIcon: {
+    backgroundColor: '#E8F4F7',
+  },
+  careerIcon: {
+    backgroundColor: '#EAF5EF',
+  },
+  featureCardTitle: {
+    marginTop: 12,
+    color: theme.colors.textPrimary,
+    fontSize: 15,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  featureCardDescription: {
+    marginTop: 3,
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    lineHeight: 15,
+    fontFamily: 'Nunito_500Medium',
+  },
+  applicationTrackerPanel: {
+    maxHeight: '85%',
+    padding: 16,
+    borderRadius: 22,
+    backgroundColor: theme.colors.cardBackground,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  applicationTrackerList: {
+    marginTop: 10,
+  },
+  applicationTrackerListContent: {
+    paddingBottom: 2,
+  },
+  applicationsHeading: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  applicationsHeadingCopy: {
+    flex: 1,
+  },
+  trackerHeaderActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  applicationsTitle: {
+    marginTop: 2,
+    color: theme.colors.textPrimary,
+    fontSize: 19,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  addApplicationButton: {
+    width: 38,
+    height: 38,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 19,
+    backgroundColor: theme.colors.buttonDark,
+  },
+  exportApplicationButton: {
+    minHeight: 36,
+    paddingHorizontal: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 5,
+    borderRadius: 18,
+    backgroundColor: '#E8F4F7',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  exportApplicationButtonText: {
+    color: theme.colors.buttonDark,
+    fontSize: 11,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  disabledAction: {
+    opacity: 0.6,
+  },
+  applicationCard: {
+    marginTop: 9,
+    padding: 13,
+    borderRadius: 16,
+    backgroundColor: '#F7FBFC',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  applicationCardHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 8,
+  },
+  applicationIdentity: {
+    flex: 1,
+  },
+  applicationRole: {
+    color: theme.colors.textPrimary,
+    fontSize: 15,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  applicationCompany: {
+    marginTop: 2,
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontFamily: 'Nunito_700Bold',
+  },
+  applicationStatusBadge: {
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+    borderRadius: 12,
+    backgroundColor: '#E8F4F7',
+  },
+  applicationStatusRejected: {
+    backgroundColor: '#FFF1EC',
+  },
+  applicationStatusOffer: {
+    backgroundColor: '#EAF5EF',
+  },
+  applicationStatusInterview: {
+    backgroundColor: '#FFF6E7',
+  },
+  applicationStatusText: {
+    color: theme.colors.buttonDark,
+    fontSize: 10,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  applicationDate: {
+    marginTop: 8,
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+  applicationUrl: {
+    marginTop: 4,
+    color: theme.colors.buttonDark,
+    fontSize: 11,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+  applicationNotes: {
+    marginTop: 6,
+    color: theme.colors.textPrimary,
+    fontSize: 12,
+    lineHeight: 17,
+    fontFamily: 'Nunito_500Medium',
+  },
+  applicationActions: {
+    marginTop: 9,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 14,
+  },
+  applicationAction: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingVertical: 3,
+  },
+  applicationActionText: {
+    color: theme.colors.buttonDark,
+    fontSize: 11,
+    fontFamily: 'Nunito_700Bold',
+  },
+  deleteActionText: {
+    color: theme.colors.accent,
+  },
+  applicationsEmpty: {
+    marginTop: 8,
+    padding: 18,
+    alignItems: 'center',
+    gap: 7,
+    borderRadius: 14,
+    backgroundColor: '#F7FBFC',
+  },
+  applicationsEmptyText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold',
+    textAlign: 'center',
+  },
+  applicationModalBackdrop: {
+    flex: 1,
+    justifyContent: 'center',
+    padding: 18,
+    backgroundColor: 'rgba(57, 83, 91, 0.48)',
+  },
+  applicationModalScroll: {
+    maxHeight: '90%',
+    borderRadius: 22,
+    backgroundColor: theme.colors.cardBackground,
+  },
+  applicationModalPanel: {
+    gap: 10,
+    padding: 18,
+  },
+  applicationModalTitle: {
+    marginBottom: 2,
+    color: theme.colors.textPrimary,
+    fontSize: 20,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  applicationInput: {
+    minHeight: 44,
+    paddingHorizontal: 11,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 11,
+    color: theme.colors.textPrimary,
+    fontSize: 13,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+  applicationNotesInput: {
+    minHeight: 86,
+    paddingTop: 10,
+  },
+  applicationFieldLabel: {
+    marginTop: 2,
+    color: theme.colors.buttonDark,
+    fontSize: 12,
+    fontFamily: 'Nunito_800ExtraBold',
+  },
+  applicationStatusOptions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 7,
+  },
+  applicationStatusOption: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 14,
+    backgroundColor: '#F3F8FA',
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+  },
+  applicationStatusOptionSelected: {
+    backgroundColor: theme.colors.primary,
+    borderColor: theme.colors.primary,
+  },
+  applicationStatusOptionText: {
+    color: theme.colors.textSecondary,
+    fontSize: 11,
+    fontFamily: 'Nunito_700Bold',
+  },
+  applicationStatusOptionTextSelected: {
+    color: theme.colors.textPrimary,
+  },
+  applicationError: {
+    color: theme.colors.accent,
+    fontSize: 12,
+    fontFamily: 'Nunito_700Bold',
+  },
+  applicationModalActions: {
+    marginTop: 4,
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 8,
+  },
+  applicationCancelButton: {
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 14,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 20,
+  },
+  applicationCancelText: {
+    color: theme.colors.textSecondary,
+    fontSize: 12,
+    fontFamily: 'Nunito_700Bold',
+  },
+  applicationSaveButton: {
+    minHeight: 40,
+    justifyContent: 'center',
+    paddingHorizontal: 15,
+    borderRadius: 20,
+    backgroundColor: theme.colors.buttonDark,
+  },
+  applicationSaveText: {
+    color: theme.colors.cardBackground,
+    fontSize: 12,
+    fontFamily: 'Nunito_800ExtraBold',
   },
 });

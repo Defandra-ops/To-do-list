@@ -42,8 +42,40 @@ export type UserAccount = {
   dailyFocus: string;
 };
 
+export type Note = {
+  id: string;
+  title: string;
+  content: string;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type JobApplicationStatus =
+  | 'Applied'
+  | 'Screening'
+  | 'Interview'
+  | 'Offer'
+  | 'Rejected'
+  | 'Cancelled';
+
+export type JobApplication = {
+  id: string;
+  company: string;
+  role: string;
+  status: JobApplicationStatus;
+  appliedDate: string;
+  jobUrl: string;
+  notes: string;
+  createdByUserId: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 type TodoStoreValue = {
   tasks: Task[];
+  notes: Note[];
+  jobApplications: JobApplication[];
   users: UserAccount[];
   activeUserId: string;
   addUser: (name: string) => void;
@@ -62,6 +94,7 @@ type TodoStoreValue = {
     appName?: string,
     appPackageName?: string
   ) => void;
+  updateTaskDetails: (taskId: string, title: string, assignedUserIds: string[]) => void;
   removeTask: (taskId: string) => void;
   toggleTask: (taskId: string) => void;
   updateTaskMilestone: (
@@ -74,14 +107,28 @@ type TodoStoreValue = {
     appPackageName?: string
   ) => void;
   addSubtask: (taskId: string, title: string) => void;
+  updateSubtask: (taskId: string, subtaskId: string, title: string) => void;
   toggleSubtask: (taskId: string, subtaskId: string) => void;
   removeSubtask: (taskId: string, subtaskId: string) => void;
+  addNote: (title: string, content: string) => void;
+  updateNote: (noteId: string, title: string, content: string) => void;
+  removeNote: (noteId: string) => void;
+  addJobApplication: (
+    application: Pick<JobApplication, 'company' | 'role' | 'status' | 'appliedDate' | 'jobUrl' | 'notes'>
+  ) => void;
+  updateJobApplication: (
+    applicationId: string,
+    updates: Pick<JobApplication, 'company' | 'role' | 'status' | 'appliedDate' | 'jobUrl' | 'notes'>
+  ) => void;
+  removeJobApplication: (applicationId: string) => void;
 };
 
 type PersistedAppState = {
   users: UserAccount[];
   activeUserId: string;
   tasks: Task[];
+  notes: Note[];
+  jobApplications: JobApplication[];
 };
 
 const TodoStoreContext = createContext<TodoStoreValue | null>(null);
@@ -98,6 +145,8 @@ const defaultUser: UserAccount = {
 const initialUsers: UserAccount[] = [defaultUser];
 
 const initialTasks: Task[] = [];
+const initialNotes: Note[] = [];
+const initialJobApplications: JobApplication[] = [];
 const STORAGE_KEY = 'todo-app-state-v1';
 const SYNC_INTERVAL_MS = 2500;
 const REMINDER_DATA_KEY = 'todoAppReminder';
@@ -280,12 +329,16 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
   const [users, setUsers] = useState<UserAccount[]>(initialUsers);
   const [activeUserId, setActiveUserId] = useState(initialUsers[0].id);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
+  const [notes, setNotes] = useState<Note[]>(initialNotes);
+  const [jobApplications, setJobApplications] = useState<JobApplication[]>(initialJobApplications);
   const [isHydrated, setIsHydrated] = useState(false);
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localSnapshotRef = useRef('');
   const remoteSnapshotRef = useRef('');
   const localPhotoUrisRef = useRef<Record<string, string>>({});
+  const notesRef = useRef<Note[]>(initialNotes);
+  const jobApplicationsRef = useRef<JobApplication[]>(initialJobApplications);
   const suppressNextRemoteSaveRef = useRef(false);
   const notificationPermissionRequestedRef = useRef(false);
   const notificationSyncQueueRef = useRef<Promise<void>>(Promise.resolve());
@@ -364,6 +417,48 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
           );
         })
       : initialTasks;
+    const nextNotes = Array.isArray(payload.notes)
+      ? payload.notes.reduce<Note[]>((result, note) => {
+          if (!note || typeof note.id !== 'string') return result;
+          result.push({
+            id: note.id,
+            title: typeof note.title === 'string' ? note.title : '',
+            content: typeof note.content === 'string' ? note.content : '',
+            createdByUserId: typeof note.createdByUserId === 'string' ? note.createdByUserId : nextUsers[0].id,
+            createdAt: typeof note.createdAt === 'string' ? note.createdAt : '',
+            updatedAt: typeof note.updatedAt === 'string' ? note.updatedAt : '',
+          });
+          return result;
+        }, [])
+      : notesRef.current;
+    const validStatuses: JobApplicationStatus[] = [
+      'Applied',
+      'Screening',
+      'Interview',
+      'Offer',
+      'Rejected',
+      'Cancelled',
+    ];
+    const nextJobApplications = Array.isArray(payload.jobApplications)
+      ? payload.jobApplications.reduce<JobApplication[]>((result, application) => {
+          if (!application || typeof application.id !== 'string') return result;
+          result.push({
+            id: application.id,
+            company: typeof application.company === 'string' ? application.company : '',
+            role: typeof application.role === 'string' ? application.role : '',
+            status: validStatuses.includes(application.status) ? application.status : 'Applied',
+            appliedDate: typeof application.appliedDate === 'string' ? application.appliedDate : '',
+            jobUrl: typeof application.jobUrl === 'string' ? application.jobUrl : '',
+            notes: typeof application.notes === 'string' ? application.notes : '',
+            createdByUserId: typeof application.createdByUserId === 'string'
+              ? application.createdByUserId
+              : nextUsers[0].id,
+            createdAt: typeof application.createdAt === 'string' ? application.createdAt : '',
+            updatedAt: typeof application.updatedAt === 'string' ? application.updatedAt : '',
+          });
+          return result;
+        }, [])
+      : jobApplicationsRef.current;
     const nextActiveUserId =
       typeof payload.activeUserId === 'string' && nextUsers.some((user) => user.id === payload.activeUserId)
         ? payload.activeUserId
@@ -372,6 +467,8 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     return {
       users: nextUsers,
       tasks: nextTasks,
+      notes: nextNotes,
+      jobApplications: nextJobApplications,
       activeUserId: nextActiveUserId,
     };
   };
@@ -383,6 +480,10 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
 
     setUsers(nextState.users);
     setTasks(nextState.tasks);
+    notesRef.current = nextState.notes;
+    setNotes(nextState.notes);
+    jobApplicationsRef.current = nextState.jobApplications;
+    setJobApplications(nextState.jobApplications);
     setActiveUserId(nextState.activeUserId);
     localSnapshotRef.current = JSON.stringify(nextState);
   };
@@ -441,6 +542,8 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         users,
         activeUserId,
         tasks,
+        notes,
+        jobApplications,
       };
       const snapshot = JSON.stringify(payload);
       const remoteSnapshot = serializeRemoteState(payload);
@@ -483,7 +586,15 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         clearTimeout(saveTimerRef.current);
       }
     };
-  }, [activeUserId, isHydrated, tasks, users]);
+  }, [activeUserId, isHydrated, jobApplications, notes, tasks, users]);
+
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
+
+  useEffect(() => {
+    jobApplicationsRef.current = jobApplications;
+  }, [jobApplications]);
 
   useEffect(() => {
     if (!isHydrated || Platform.OS === 'web') return;
@@ -644,6 +755,33 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     setTasks((prev) => prev.filter((task) => task.id !== taskId));
   };
 
+  const updateTaskDetails = (taskId: string, title: string, assignedUserIds: string[]) => {
+    const cleaned = title.trim();
+    if (!cleaned) return;
+
+    setTasks((prev) =>
+      prev.map((task) => {
+        if (task.id !== taskId) return task;
+        const nextAssignedUserIds = Array.from(new Set(assignedUserIds));
+        const progressByUserId = { ...task.progressByUserId };
+        nextAssignedUserIds.forEach((userId) => {
+          if (!progressByUserId[userId]) {
+            progressByUserId[userId] = { completed: false, completedOn: '', subtasks: {} };
+          }
+        });
+
+        return updateTaskAggregate(
+          {
+            ...task,
+            title: cleaned,
+            assignedUserIds: nextAssignedUserIds.length > 0 ? nextAssignedUserIds : [task.createdByUserId],
+          },
+          progressByUserId
+        );
+      })
+    );
+  };
+
   const toggleTask = (taskId: string) => {
     setTasks((prev) =>
       prev.map((task) => {
@@ -731,6 +869,24 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const updateSubtask = (taskId: string, subtaskId: string, title: string) => {
+    const cleaned = title.trim();
+    if (!cleaned) return;
+
+    setTasks((prev) =>
+      prev.map((task) =>
+        task.id === taskId
+          ? {
+              ...task,
+              subtasks: task.subtasks.map((subtask) =>
+                subtask.id === subtaskId ? { ...subtask, title: cleaned } : subtask
+              ),
+            }
+          : task
+      )
+    );
+  };
+
   const toggleSubtask = (taskId: string, subtaskId: string) => {
     setTasks((prev) =>
       prev.map((task) => {
@@ -793,23 +949,116 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     );
   };
 
+  const addNote = (title: string, content: string) => {
+    const cleanedTitle = title.trim();
+    const cleanedContent = content.trim();
+    if (!cleanedTitle || !cleanedContent) return;
+
+    const now = new Date().toISOString();
+    setNotes((prev) => [
+      {
+        id: buildId(),
+        title: cleanedTitle,
+        content: cleanedContent,
+        createdByUserId: activeUserId,
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...prev,
+    ]);
+  };
+
+  const updateNote = (noteId: string, title: string, content: string) => {
+    const cleanedTitle = title.trim();
+    const cleanedContent = content.trim();
+    if (!cleanedTitle || !cleanedContent) return;
+
+    setNotes((prev) =>
+      prev.map((note) =>
+        note.id === noteId
+          ? { ...note, title: cleanedTitle, content: cleanedContent, updatedAt: new Date().toISOString() }
+          : note
+      )
+    );
+  };
+
+  const removeNote = (noteId: string) => {
+    setNotes((prev) => prev.filter((note) => note.id !== noteId));
+  };
+
+  const addJobApplication: TodoStoreValue['addJobApplication'] = (application) => {
+    const company = application.company.trim();
+    const role = application.role.trim();
+    if (!company || !role) return;
+    const now = new Date().toISOString();
+    setJobApplications((prev) => [
+      {
+        ...application,
+        id: buildId(),
+        company,
+        role,
+        jobUrl: application.jobUrl.trim(),
+        notes: application.notes.trim(),
+        createdByUserId: activeUserId,
+        createdAt: now,
+        updatedAt: now,
+      },
+      ...prev,
+    ]);
+  };
+
+  const updateJobApplication: TodoStoreValue['updateJobApplication'] = (applicationId, updates) => {
+    const company = updates.company.trim();
+    const role = updates.role.trim();
+    if (!company || !role) return;
+    setJobApplications((prev) =>
+      prev.map((application) =>
+        application.id === applicationId
+          ? {
+              ...application,
+              ...updates,
+              company,
+              role,
+              jobUrl: updates.jobUrl.trim(),
+              notes: updates.notes.trim(),
+              updatedAt: new Date().toISOString(),
+            }
+          : application
+      )
+    );
+  };
+
+  const removeJobApplication = (applicationId: string) => {
+    setJobApplications((prev) => prev.filter((application) => application.id !== applicationId));
+  };
+
   const value = useMemo(
     () => ({
       tasks,
+      notes,
+      jobApplications,
       users,
       activeUserId,
       addUser,
       updateUserProfile,
       setActiveUserId,
       addTask,
+      updateTaskDetails,
       removeTask,
       toggleTask,
       updateTaskMilestone,
       addSubtask,
+      updateSubtask,
       toggleSubtask,
       removeSubtask,
+      addNote,
+      updateNote,
+      removeNote,
+      addJobApplication,
+      updateJobApplication,
+      removeJobApplication,
     }),
-    [activeUserId, tasks, users]
+    [activeUserId, jobApplications, notes, tasks, users]
   );
 
   return <TodoStoreContext.Provider value={value}>{children}</TodoStoreContext.Provider>;
