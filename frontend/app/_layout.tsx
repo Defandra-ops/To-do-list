@@ -15,6 +15,7 @@ import * as Notifications from 'expo-notifications';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
+import { AppSettingsProvider } from '@/components/AppSettings';
 import { TodoStoreProvider } from '@/components/TodoStore';
 
 export {
@@ -71,14 +72,16 @@ function RootLayoutNav() {
   }, [router]);
 
   return (
-    <TodoStoreProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <Stack>
-          <Stack.Screen name="welcome" options={{ headerShown: false }} />
-          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-          <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-        </Stack>
-      </ThemeProvider>
-    </TodoStoreProvider>
+    <AppSettingsProvider>
+      <TodoStoreProvider>
+        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+          <Stack>
+            <Stack.Screen name="welcome" options={{ headerShown: false }} />
+            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+            <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+          </Stack>
+        </ThemeProvider>
+      </TodoStoreProvider>
+    </AppSettingsProvider>
   );
 }

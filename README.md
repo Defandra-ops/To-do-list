@@ -214,20 +214,16 @@ npx expo run:android
 
 This builds and installs the app on the connected Android device or emulator.
 
-### 2. Installable APK/AAB build
+### 2. Installable release APK
 
-Use Expo Application Services if you want a shareable Android build:
+From the repository root, build a release APK with:
 
 ```bash
-cd frontend
-npx eas build:configure
-npx eas build -p android
+npm run build:android
 ```
 
-Notes:
-- `APK` is easier for direct installation.
-- `AAB` is usually for Google Play Store submission.
-- If you only want a test install on your emulator, `npx expo run:android` is the fastest option.
+The APK is written to `frontend/android/app/build/outputs/apk/release/app-release.apk`.
+The command runs the Android Gradle release build locally. For a Google Play AAB or cloud build, use Expo Application Services.
 
 ## Install On A Real Phone Without Expo Go
 
@@ -260,14 +256,13 @@ This installs a custom app on your phone without Expo Go.
 Use this if you want a normal installable app file:
 
 ```bash
-cd frontend
-npx eas build:configure
-npx eas build -p android
+npm run build:android
 ```
 
-After the build finishes, download the APK/AAB and install it on your phone.
+After the build finishes, copy `frontend/android/app/build/outputs/apk/release/app-release.apk` to your phone and install it.
 
 Notes:
 - `expo run:android` is best for testing and development.
-- `eas build -p android` is best for sharing or final release.
+- `npm run build:android` creates the local release APK.
+- Expo Application Services can be used when you need a cloud build or Play Store AAB.
 - You do not need Expo Go for either option.

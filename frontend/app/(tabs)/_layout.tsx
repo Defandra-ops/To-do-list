@@ -3,6 +3,8 @@ import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { Link, Tabs } from 'expo-router';
 import { Pressable } from 'react-native';
 
+import { useAppSettings } from '@/components/AppSettings';
+import { translate } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 
@@ -15,6 +17,8 @@ function TabBarIcon(props: {
 }
 
 export default function TabLayout() {
+  const { language } = useAppSettings();
+
   return (
     <Tabs
       screenOptions={{
@@ -43,14 +47,14 @@ export default function TabLayout() {
       <Tabs.Screen
         name="index"
         options={{
-          title: 'Home',
+          title: translate('Home', language),
           tabBarIcon: ({ color }) => <TabBarIcon name="home" color={color} />,
         }}
       />
       <Tabs.Screen
         name="planner"
         options={{
-          title: 'Tasks',
+          title: translate('Tasks', language),
           tabBarIcon: ({ color }) => <TabBarIcon name="list-ul" color={color} />,
           headerRight: () => (
             <Link href="/modal" asChild>
@@ -71,29 +75,36 @@ export default function TabLayout() {
       <Tabs.Screen
         name="notes"
         options={{
-          title: 'Notes',
+          title: translate('Notes', language),
           href: null,
         }}
       />
       <Tabs.Screen
         name="overview"
         options={{
-          title: 'Overview',
+          title: translate('Overview', language),
           tabBarIcon: ({ color }) => <TabBarIcon name="pie-chart" color={color} />,
         }}
       />
       <Tabs.Screen
         name="calendar"
         options={{
-          title: 'Calendar',
+          title: translate('Calendar', language),
           href: null,
         }}
       />
       <Tabs.Screen
         name="users"
         options={{
-          title: 'Users',
+          title: translate('Users', language),
           tabBarIcon: ({ color }) => <TabBarIcon name="user" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="settings"
+        options={{
+          title: translate('Settings', language),
+          tabBarIcon: ({ color }) => <TabBarIcon name="cog" color={color} />,
         }}
       />
     </Tabs>

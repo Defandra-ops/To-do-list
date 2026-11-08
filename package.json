@@ -4,6 +4,7 @@
     "start": "npm --prefix frontend run start",
     "android": "npm --prefix frontend run android",
     "android:auto": "powershell -ExecutionPolicy Bypass -File .\\start-android.ps1",
+    "build:android": "npm --prefix frontend run build:android",
     "web": "npm --prefix frontend run web",
     "backend:dev": "bun --cwd backend run dev",
     "docker:up": "docker compose up --build",

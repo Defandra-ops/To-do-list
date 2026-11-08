@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTodoStore } from '@/components/TodoStore';
+import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
 
 export default function NotesScreen() {

@@ -1,9 +1,11 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getUserTaskProgress, Task, useTodoStore } from '@/components/TodoStore';
+import { LocalizedText as Text } from '@/components/LocalizedText';
+import { useAppSettings } from '@/components/AppSettings';
 import { theme } from '@/constants/Colors';
 
 const toIsoDate = (date: Date) =>
@@ -39,18 +41,18 @@ const statusColor = (status: string) => {
   return theme.colors.buttonDark;
 };
 
-const formatDate = (date: string) =>
-  new Date(`${date}T00:00:00`).toLocaleDateString('en', {
+const formatDate = (date: string, language: 'en' | 'id') =>
+  new Date(`${date}T00:00:00`).toLocaleDateString(language === 'id' ? 'id-ID' : 'en', {
     month: 'long',
     day: 'numeric',
     year: 'numeric',
   });
 
-const formatTime = (time: string) => {
+const formatTime = (time: string, language: 'en' | 'id') => {
   const [hour, minute] = time.split(':').map(Number);
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
-  return date.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' });
+  return date.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en', { hour: 'numeric', minute: '2-digit' });
 };
 
 const getOccupiedDayCount = (startDate: string, endDate: string) => {
@@ -60,6 +62,7 @@ const getOccupiedDayCount = (startDate: string, endDate: string) => {
 };
 
 export default function CalendarScreen({ embedded = false }: { embedded?: boolean }) {
+  const { language } = useAppSettings();
   const { tasks: allTasks, activeUserId } = useTodoStore();
   const tasks = useMemo(
     () => allTasks.filter(
@@ -123,7 +126,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
           <Text style={styles.taskTitle}>{task.title}</Text>
           <Text style={styles.taskMeta}>
               {task.isDaily
-                ? `Daily at ${formatTime(task.dailyTime)}${task.endDate ? ` · until ${task.endDate}` : ''}`
+                ? `Daily at ${formatTime(task.dailyTime, language)}${task.endDate ? ` · until ${task.endDate}` : ''}`
                 : task.endDate ? `Deadline ${task.endDate}` : task.startDate ? `Started ${task.startDate}` : 'No dates set'}
           </Text>
             {task.appName ? <Text style={styles.taskMeta}>{task.appName}</Text> : null}
@@ -134,7 +137,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
     );
   };
 
-  const readableSelectedDate = new Date(`${selectedDate}T00:00:00`).toLocaleDateString('en', {
+  const readableSelectedDate = new Date(`${selectedDate}T00:00:00`).toLocaleDateString(language === 'id' ? 'id-ID' : 'en', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
@@ -177,7 +180,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
 
         <View style={styles.calendarPanel}>
           <View style={styles.monthHeader}>
-            <Text style={styles.monthTitle}>{month.toLocaleDateString('en', { month: 'long', year: 'numeric' })}</Text>
+            <Text style={styles.monthTitle}>{month.toLocaleDateString(language === 'id' ? 'id-ID' : 'en', { month: 'long', year: 'numeric' })}</Text>
             <View style={styles.monthControls}>
               <Pressable accessibilityLabel="Previous month" style={styles.monthButton} onPress={() => changeMonth(-1)}>
                 <Ionicons name="chevron-back" size={19} color={theme.colors.buttonDark} />
@@ -189,7 +192,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
           </View>
 
           <View style={styles.weekdays}>
-            {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+            {(language === 'id' ? ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S']).map((day, index) => (
               <Text key={`${day}-${index}`} style={styles.weekday}>{day}</Text>
             ))}
           </View>
@@ -205,7 +208,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                   disabled={!date}
                   style={[styles.dayCell, isSelected && styles.dayCellSelected]}
                   accessibilityRole="button"
-                  accessibilityLabel={date ? `${formatDate(date)}, ${dayTasks.length} tasks` : undefined}
+                  accessibilityLabel={date ? `${formatDate(date, language)}, ${dayTasks.length} tasks` : undefined}
                   onPress={() => {
                     setSelectedDate(date);
                     if (!embedded) setIsDateModalVisible(true);
@@ -288,7 +291,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
               <View style={styles.modalHeadingWrap}>
                 <Text style={styles.modalEyebrow}>{modalTask ? 'TASK SCHEDULE' : 'DATE SCHEDULE'}</Text>
                 <Text style={styles.modalTitle}>
-                  {modalTask ? modalTask.title : formatDate(selectedDate)}
+                  {modalTask ? modalTask.title : formatDate(selectedDate, language)}
                 </Text>
               </View>
               <Pressable
@@ -309,7 +312,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                   <View style={styles.detailTextWrap}>
                     <Text style={styles.detailLabel}>Time</Text>
                     <Text style={styles.detailValue}>
-                      {modalTask.isDaily ? `Every day at ${formatTime(modalTask.dailyTime)}` : 'All day'}
+                      {modalTask.isDaily ? `Every day at ${formatTime(modalTask.dailyTime, language)}` : 'All day'}
                     </Text>
                   </View>
                 </View>
@@ -319,13 +322,13 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                     <Text style={styles.detailLabel}>Occupies these dates</Text>
                     <Text style={styles.detailValue}>
                       {modalTask.isDaily
-                        ? `Daily from ${formatDate(modalTask.startDate)}${modalTask.endDate ? ` to ${formatDate(modalTask.endDate)}` : ' onward'}`
+                        ? `Daily from ${formatDate(modalTask.startDate, language)}${modalTask.endDate ? ` to ${formatDate(modalTask.endDate, language)}` : ' onward'}`
                         : modalTask.startDate && modalTask.endDate
-                        ? `${formatDate(modalTask.startDate)}${modalTask.startDate === modalTask.endDate ? '' : ` to ${formatDate(modalTask.endDate)}`}`
+                        ? `${formatDate(modalTask.startDate, language)}${modalTask.startDate === modalTask.endDate ? '' : ` to ${formatDate(modalTask.endDate, language)}`}`
                         : modalTask.startDate
-                          ? `${formatDate(modalTask.startDate)} onward`
+                          ? `${formatDate(modalTask.startDate, language)} onward`
                           : modalTask.endDate
-                            ? formatDate(modalTask.endDate)
+                            ? formatDate(modalTask.endDate, language)
                             : 'No dates assigned'}
                     </Text>
                     {modalTask.startDate && modalTask.endDate ? (

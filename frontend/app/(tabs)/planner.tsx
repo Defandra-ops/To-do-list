@@ -12,13 +12,13 @@ import {
   ScrollView,
   StyleSheet,
   Switch,
-  Text,
-  TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { getUserTaskProgress, useTodoStore } from '@/components/TodoStore';
+import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/components/LocalizedText';
+import { useAppSettings } from '@/components/AppSettings';
 import { getInstalledApps, type InstalledApp } from '@/modules/installed-app-picker';
 import { theme } from '@/constants/Colors';
 
@@ -75,19 +75,19 @@ const taskOccupiesDate = (task: { startDate: string; endDate: string; isDaily: b
   return false;
 };
 
-const formatReadableDate = (date: string) =>
-  new Date(`${date}T00:00:00`).toLocaleDateString('en', {
+const formatReadableDate = (date: string, language: 'en' | 'id') =>
+  new Date(`${date}T00:00:00`).toLocaleDateString(language === 'id' ? 'id-ID' : 'en', {
     weekday: 'long',
     month: 'long',
     day: 'numeric',
     year: 'numeric',
   });
 
-const formatTime = (time: string) => {
+const formatTime = (time: string, language: 'en' | 'id') => {
   const [hour, minute] = time.split(':').map(Number);
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
-  return date.toLocaleTimeString('en', { hour: 'numeric', minute: '2-digit' });
+  return date.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en', { hour: 'numeric', minute: '2-digit' });
 };
 
 const parseTime = (time: string) => {
@@ -100,6 +100,7 @@ const parseTime = (time: string) => {
 const toTimeValue = (date: Date) => `${`${date.getHours()}`.padStart(2, '0')}:${`${date.getMinutes()}`.padStart(2, '0')}`;
 
 export default function PlannerScreen() {
+  const { language } = useAppSettings();
   const {
     tasks,
     users,
@@ -593,7 +594,7 @@ export default function PlannerScreen() {
                   </Pressable>
                   <Pressable style={styles.dailyTimeButton} onPress={() => openTimePicker({ scope: 'new' })}>
                     <Ionicons name="time-outline" size={18} color={theme.colors.buttonDark} />
-                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(dailyTimeDraft)}</Text>
+                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(dailyTimeDraft, language)}</Text>
                     <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
                   </Pressable>
                 </>
@@ -689,7 +690,7 @@ export default function PlannerScreen() {
                   <View style={styles.taskTextWrap}>
                     <Text style={[styles.taskTitle, isCompleted && styles.completedText]}>{item.title}</Text>
                     <Text style={styles.taskMeta}>
-                      {item.isDaily ? `Daily at ${formatTime(item.dailyTime)} · ` : ''}Subtasks done: {done}/{total}
+                      {item.isDaily ? `Daily at ${formatTime(item.dailyTime, language)} · ` : ''}Subtasks done: {done}/{total}
                     </Text>
                     {item.appName ? <Text style={styles.taskOwnerText}>App: {item.appName}</Text> : null}
                     <Text style={styles.taskOwnerText}>Created by {creatorName}</Text>
@@ -804,7 +805,7 @@ export default function PlannerScreen() {
                   </Pressable>
                   <Pressable style={styles.dailyTimeButtonTask} onPress={() => openTimePicker({ scope: 'milestone', taskId: item.id })}>
                     <Ionicons name="time-outline" size={16} color={theme.colors.buttonDark} />
-                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(milestone.dailyTime)}</Text>
+                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(milestone.dailyTime, language)}</Text>
                     <Ionicons name="chevron-forward" size={15} color={theme.colors.textSecondary} />
                   </Pressable>
                 </>
@@ -1024,7 +1025,7 @@ export default function PlannerScreen() {
 
             <View style={styles.dateModalMonthRow}>
               <Text style={styles.dateModalMonthTitle}>
-                {pickerMonth.toLocaleDateString('en', { month: 'long', year: 'numeric' })}
+                {pickerMonth.toLocaleDateString(language === 'id' ? 'id-ID' : 'en', { month: 'long', year: 'numeric' })}
               </Text>
               <View style={styles.dateModalMonthControls}>
                 <Pressable accessibilityLabel="Previous month" style={styles.dateModalMonthButton} onPress={() => movePickerMonth(-1)}>
@@ -1037,7 +1038,7 @@ export default function PlannerScreen() {
             </View>
 
             <View style={styles.datePickerWeekdays}>
-              {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, index) => (
+              {(language === 'id' ? ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S']).map((day, index) => (
                 <Text key={`${day}-${index}`} style={styles.datePickerWeekday}>{day}</Text>
               ))}
             </View>
@@ -1051,7 +1052,7 @@ export default function PlannerScreen() {
                     key={`${date || 'blank'}-${index}`}
                     disabled={!date}
                     accessibilityRole="button"
-                    accessibilityLabel={date ? `${formatReadableDate(date)}${occupiedTasks.length ? `, occupied by ${occupiedTasks.map((task) => task.title).join(', ')}` : ', no tasks scheduled'}` : undefined}
+                    accessibilityLabel={date ? `${formatReadableDate(date, language)}${occupiedTasks.length ? `, occupied by ${occupiedTasks.map((task) => task.title).join(', ')}` : ', no tasks scheduled'}` : undefined}
                     style={[styles.datePickerDay, isSelected && styles.datePickerDaySelected]}
                     onPress={() => setPickerPreviewDate(date)}>
                     {date ? (
@@ -1074,7 +1075,7 @@ export default function PlannerScreen() {
             <View style={styles.occupiedHint}>
               <View style={styles.occupiedHintHeader}>
                 <Ionicons name="information-circle-outline" size={18} color={theme.colors.buttonDark} />
-                <Text style={styles.occupiedHintTitle}>{formatReadableDate(pickerPreviewDate)}</Text>
+                <Text style={styles.occupiedHintTitle}>{formatReadableDate(pickerPreviewDate, language)}</Text>
               </View>
               <Text style={styles.occupiedHintLabel}>
                 {pickerOccupiedTasks.length > 0 ? 'Already occupied by:' : 'No tasks currently occupy this date.'}

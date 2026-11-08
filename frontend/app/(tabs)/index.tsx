@@ -3,7 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -12,6 +12,7 @@ import {
   type JobApplication,
   type JobApplicationStatus,
 } from '@/components/TodoStore';
+import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
 
 type ApplicationDraft = Pick<JobApplication, 'company' | 'role' | 'status' | 'appliedDate' | 'jobUrl' | 'notes'>;
@@ -24,6 +25,15 @@ const applicationStatuses: JobApplicationStatus[] = [
   'Rejected',
   'Cancelled',
 ];
+
+const applicationStatusColors: Record<JobApplicationStatus, { background: string; text: string }> = {
+  Applied: { background: '#E8F4F7', text: '#28627A' },
+  Screening: { background: '#F1ECFA', text: '#684A98' },
+  Interview: { background: '#FFF6E7', text: '#8B641B' },
+  Offer: { background: '#EAF5EF', text: '#34734E' },
+  Rejected: { background: '#FFF1EC', text: '#A64B3C' },
+  Cancelled: { background: '#EEF0F2', text: '#5D6670' },
+};
 
 const menuItems = [
   {
@@ -85,6 +95,7 @@ export default function HomeScreen() {
   const [editingApplicationId, setEditingApplicationId] = useState<string | null>(null);
   const [isExportingApplications, setIsExportingApplications] = useState(false);
   const [applicationExportError, setApplicationExportError] = useState('');
+  const [applicationSearch, setApplicationSearch] = useState('');
   const [applicationDraft, setApplicationDraft] = useState<ApplicationDraft>({
     company: '',
     role: '',
@@ -107,6 +118,19 @@ export default function HomeScreen() {
     (task) => !getUserTaskProgress(task, activeUserId).completed && Boolean(task.endDate) && task.endDate < today
   ).length;
   const userApplications = jobApplications.filter((application) => application.createdByUserId === activeUserId);
+  const normalizedApplicationSearch = applicationSearch.trim().toLocaleLowerCase();
+  const visibleApplications = userApplications
+    .filter((application) =>
+      [
+        application.company,
+        application.role,
+        application.status,
+        application.appliedDate,
+        application.jobUrl,
+        application.notes,
+      ].some((value) => value.toLocaleLowerCase().includes(normalizedApplicationSearch))
+    )
+    .sort((first, second) => applicationStatuses.indexOf(first.status) - applicationStatuses.indexOf(second.status));
   const interviewCount = userApplications.filter((application) => application.status === 'Interview').length;
 
   const openMenuItem = (route: (typeof menuItems)[number]['route']) => {
@@ -399,26 +423,48 @@ export default function HomeScreen() {
             {applicationExportError ? (
               <Text style={styles.applicationError}>{applicationExportError}</Text>
             ) : null}
+            <View style={styles.applicationSearch}>
+              <Ionicons name="search-outline" size={18} color={theme.colors.textMuted} />
+              <TextInput
+                accessibilityLabel="Search job applications"
+                style={styles.applicationSearchInput}
+                value={applicationSearch}
+                onChangeText={setApplicationSearch}
+                placeholder="Search company, role, or status"
+                placeholderTextColor={theme.colors.textMuted}
+                returnKeyType="search"
+              />
+              {applicationSearch ? (
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Clear job application search"
+                  onPress={() => setApplicationSearch('')}>
+                  <Ionicons name="close-circle" size={18} color={theme.colors.textMuted} />
+                </Pressable>
+              ) : null}
+            </View>
             <ScrollView
               style={styles.applicationTrackerList}
               contentContainerStyle={styles.applicationTrackerListContent}
               keyboardShouldPersistTaps="handled">
-              {userApplications.map((application) => (
+              {visibleApplications.map((application) => (
                 <View key={application.id} style={styles.applicationCard}>
                   <View style={styles.applicationCardHeader}>
                     <View style={styles.applicationIdentity}>
                       <Text style={styles.applicationRole}>{application.role}</Text>
                       <Text style={styles.applicationCompany}>{application.company}</Text>
                     </View>
-                    <View
-                      style={[
-                        styles.applicationStatusBadge,
-                        (application.status === 'Rejected' || application.status === 'Cancelled') &&
-                          styles.applicationStatusRejected,
-                        application.status === 'Offer' && styles.applicationStatusOffer,
-                        application.status === 'Interview' && styles.applicationStatusInterview,
-                      ]}>
-                      <Text style={styles.applicationStatusText}>{application.status}</Text>
+                    <View style={[
+                      styles.applicationStatusBadge,
+                      { backgroundColor: applicationStatusColors[application.status].background },
+                    ]}>
+                      <Text
+                        style={[
+                          styles.applicationStatusText,
+                          { color: applicationStatusColors[application.status].text },
+                        ]}>
+                        {application.status}
+                      </Text>
                     </View>
                   </View>
                   <Text style={styles.applicationDate}>
@@ -454,6 +500,11 @@ export default function HomeScreen() {
                 <View style={styles.applicationsEmpty}>
                   <Ionicons name="briefcase-outline" size={25} color={theme.colors.textMuted} />
                   <Text style={styles.applicationsEmptyText}>No applications yet. Tap + to add one.</Text>
+                </View>
+              ) : visibleApplications.length === 0 ? (
+                <View style={styles.applicationsEmpty}>
+                  <Ionicons name="search-outline" size={25} color={theme.colors.textMuted} />
+                  <Text style={styles.applicationsEmptyText}>No applications match your search.</Text>
                 </View>
               ) : null}
             </ScrollView>
@@ -772,7 +823,7 @@ const styles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   applicationTrackerList: {
-    marginTop: 10,
+    marginTop: 2,
   },
   applicationTrackerListContent: {
     paddingBottom: 2,
@@ -824,6 +875,25 @@ const styles = StyleSheet.create({
   disabledAction: {
     opacity: 0.6,
   },
+  applicationSearch: {
+    minHeight: 42,
+    marginTop: 10,
+    paddingHorizontal: 11,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
+    borderRadius: 12,
+    backgroundColor: '#F7FBFC',
+  },
+  applicationSearchInput: {
+    flex: 1,
+    paddingVertical: 8,
+    color: theme.colors.textPrimary,
+    fontSize: 12,
+    fontFamily: 'Nunito_600SemiBold',
+  },
   applicationCard: {
     marginTop: 9,
     padding: 13,
@@ -856,19 +926,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 5,
     borderRadius: 12,
-    backgroundColor: '#E8F4F7',
-  },
-  applicationStatusRejected: {
-    backgroundColor: '#FFF1EC',
-  },
-  applicationStatusOffer: {
-    backgroundColor: '#EAF5EF',
-  },
-  applicationStatusInterview: {
-    backgroundColor: '#FFF6E7',
   },
   applicationStatusText: {
-    color: theme.colors.buttonDark,
     fontSize: 10,
     fontFamily: 'Nunito_800ExtraBold',
   },

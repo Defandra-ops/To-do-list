@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import Svg, { Circle, G, Rect } from 'react-native-svg';
 
 import { getUserTaskProgress, Task, useTodoStore } from '@/components/TodoStore';
+import { LocalizedText as Text } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
 
 const getLocalIsoDate = () => {

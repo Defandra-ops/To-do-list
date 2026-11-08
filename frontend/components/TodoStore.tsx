@@ -2,6 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
+import { useAppSettings } from '@/components/AppSettings';
 
 export type Subtask = {
   id: string;
@@ -210,8 +211,21 @@ const getTodayIsoDate = () => {
   return `${today.getFullYear()}-${`${today.getMonth() + 1}`.padStart(2, '0')}-${`${today.getDate()}`.padStart(2, '0')}`;
 };
 
-async function syncTaskNotifications(tasks: Task[], requestPermission: boolean) {
+async function syncTaskNotifications(tasks: Task[], requestPermission: boolean, enabled: boolean) {
   if (Platform.OS === 'web') return;
+
+  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
+  const reminderNotifications = scheduled.filter(
+    (notification) => notification.content.data[REMINDER_DATA_KEY] === true
+  );
+  if (!enabled) {
+    await Promise.all(
+      reminderNotifications.map((notification) =>
+        Notifications.cancelScheduledNotificationAsync(notification.identifier)
+      )
+    );
+    return;
+  }
 
   const today = getTodayIsoDate();
   const activeTasks = tasks.filter((task) =>
@@ -231,11 +245,10 @@ async function syncTaskNotifications(tasks: Task[], requestPermission: boolean) 
     });
   }
 
-  const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   await Promise.all(
-    scheduled
-      .filter((notification) => notification.content.data[REMINDER_DATA_KEY] === true)
-      .map((notification) => Notifications.cancelScheduledNotificationAsync(notification.identifier))
+    reminderNotifications.map((notification) =>
+      Notifications.cancelScheduledNotificationAsync(notification.identifier)
+    )
   );
 
   const now = new Date();
@@ -326,6 +339,7 @@ const serializeRemoteState = (state: PersistedAppState) =>
   });
 
 export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
+  const { notificationsEnabled, isReady: areSettingsReady } = useAppSettings();
   const [users, setUsers] = useState<UserAccount[]>(initialUsers);
   const [activeUserId, setActiveUserId] = useState(initialUsers[0].id);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
@@ -597,15 +611,16 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
   }, [jobApplications]);
 
   useEffect(() => {
-    if (!isHydrated || Platform.OS === 'web') return;
+    if (!isHydrated || !areSettingsReady || Platform.OS === 'web') return;
 
     let isCurrent = true;
     const hasRemindableTasks = tasks.some((task) => !task.completed);
-    const requestPermission = hasRemindableTasks && !notificationPermissionRequestedRef.current;
+    const requestPermission =
+      notificationsEnabled && hasRemindableTasks && !notificationPermissionRequestedRef.current;
     if (requestPermission) notificationPermissionRequestedRef.current = true;
 
     notificationSyncQueueRef.current = notificationSyncQueueRef.current
-      .then(() => syncTaskNotifications(tasks, requestPermission))
+      .then(() => syncTaskNotifications(tasks, requestPermission, notificationsEnabled))
       .catch((error) => {
         if (isCurrent) console.error('Failed to sync task reminders:', error);
       });
@@ -613,7 +628,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isCurrent = false;
     };
-  }, [isHydrated, tasks]);
+  }, [areSettingsReady, isHydrated, notificationsEnabled, tasks]);
 
   useEffect(() => {
     if (!isHydrated) return;
