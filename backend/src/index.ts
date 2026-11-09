@@ -107,4 +107,67 @@ pool
     `
     )
   )
-  .then(() => console.log("App state table checked/created"));
+  .then(() =>
+    pool.query(`
+      CREATE OR REPLACE VIEW app_tasks AS
+      SELECT
+        task->>'id' AS id,
+        task->>'title' AS title,
+        COALESCE((task->>'completed')::boolean, false) AS completed,
+        task->>'completedOn' AS completed_on,
+        COALESCE((task->>'isDaily')::boolean, false) AS is_daily,
+        task->>'dailyTime' AS daily_time,
+        task->>'startDate' AS start_date,
+        task->>'endDate' AS end_date,
+        task->>'createdByUserId' AS created_by_user_id,
+        task->>'deadlineByUserId' AS deadline_by_user_id,
+        task->'assignedUserIds' AS assigned_user_ids,
+        task->'participantUserIds' AS participant_user_ids,
+        task->'subtasks' AS subtasks,
+        task->'progressByUserId' AS progress_by_user_id
+      FROM app_state
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(payload->'tasks', '[]'::jsonb)) AS task
+      WHERE app_state.id = 1;
+
+      CREATE OR REPLACE VIEW app_notes AS
+      SELECT
+        note->>'id' AS id,
+        note->>'title' AS title,
+        note->>'content' AS content,
+        note->>'createdByUserId' AS created_by_user_id,
+        note->>'createdAt' AS created_at,
+        note->>'updatedAt' AS updated_at
+      FROM app_state
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(payload->'notes', '[]'::jsonb)) AS note
+      WHERE app_state.id = 1;
+
+      CREATE OR REPLACE VIEW app_job_applications AS
+      SELECT
+        application->>'id' AS id,
+        application->>'company' AS company,
+        application->>'role' AS role,
+        application->>'status' AS status,
+        application->>'appliedDate' AS applied_date,
+        application->>'jobUrl' AS job_url,
+        application->>'notes' AS notes,
+        application->>'createdByUserId' AS created_by_user_id,
+        application->>'createdAt' AS created_at,
+        application->>'updatedAt' AS updated_at
+      FROM app_state
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(payload->'jobApplications', '[]'::jsonb)) AS application
+      WHERE app_state.id = 1;
+
+      CREATE OR REPLACE VIEW app_users AS
+      SELECT
+        app_user->>'id' AS id,
+        app_user->>'name' AS name,
+        NULLIF(app_user->>'age', '')::integer AS age,
+        app_user->>'dailyFocus' AS daily_focus,
+        (app_user->>'id' = app_state.payload->>'activeUserId') AS is_active
+      FROM app_state
+      CROSS JOIN LATERAL jsonb_array_elements(COALESCE(payload->'users', '[]'::jsonb)) AS app_user
+      WHERE app_state.id = 1;
+    `)
+  )
+  .then(() => console.log("App state tables and query views checked/created"))
+  .catch((error) => console.error("Failed to initialize database schema:", error));

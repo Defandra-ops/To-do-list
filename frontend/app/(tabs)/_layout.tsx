@@ -55,6 +55,7 @@ export default function TabLayout() {
         name="planner"
         options={{
           title: translate('Tasks', language),
+          href: null,
           tabBarIcon: ({ color }) => <TabBarIcon name="list-ul" color={color} />,
           headerRight: () => (
             <Link href="/modal" asChild>
@@ -105,6 +106,13 @@ export default function TabLayout() {
         options={{
           title: translate('Settings', language),
           tabBarIcon: ({ color }) => <TabBarIcon name="cog" color={color} />,
+        }}
+      />
+      <Tabs.Screen
+        name="documents"
+        options={{
+          title: translate('Document tools', language),
+          href: null,
         }}
       />
     </Tabs>

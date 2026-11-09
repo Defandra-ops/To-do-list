@@ -37,7 +37,7 @@
         "expo-image-picker",
         {
           "photosPermission": "Allow Todo Planner to use a photo from your gallery as your profile picture.",
-          "cameraPermission": false,
+          "cameraPermission": "Allow Todo Planner to take photos of documents for scanning.",
           "microphonePermission": false
         }
       ],

@@ -114,8 +114,8 @@ Then restart the emulator and run Expo again.
 
 If you want PostgreSQL and the Bun backend:
 
-```bash
-docker compose up --build
+```powershell
+docker compose up -d --build
 ```
 
 This starts:
@@ -124,9 +124,56 @@ This starts:
 
 Stop it with:
 
-```bash
+```powershell
 docker compose down
 ```
+
+### Connect TablePlus
+
+After starting Docker Compose, create a PostgreSQL connection in TablePlus with:
+
+| Setting | Value |
+| --- | --- |
+| Host | `127.0.0.1` |
+| Port | `5432` |
+| User | `user` |
+| Password | `password` |
+| Database | `todolist` |
+| SSL | Disabled for local Docker |
+
+These are local development credentials from `docker-compose.yml`; do not expose this database or reuse these credentials in production. The PostgreSQL data is kept in the `postgres_data` Docker volume.
+
+The backend creates the schema and query views when it starts. In TablePlus, refresh the `public` schema to see:
+
+- `app_tasks` — task records and their nested subtasks/progress.
+- `app_notes` — notes.
+- `app_job_applications` — job applications.
+- `app_users` — profiles.
+- `app_state` — the original complete JSONB app state.
+- `todos` — a legacy table; the current Planner does not store its tasks here.
+
+The views make the records inside `app_state` easier to query. For example:
+
+```sql
+SELECT id, title, completed, start_date, end_date, assigned_user_ids
+FROM app_tasks
+ORDER BY title;
+```
+
+```sql
+SELECT company, role, status, applied_date, job_url
+FROM app_job_applications
+ORDER BY applied_date DESC;
+```
+
+```sql
+SELECT status, COUNT(*) AS application_count
+FROM app_job_applications
+GROUP BY status
+ORDER BY status;
+```
+
+These are read-only views: changes made to records in the app appear in them after synchronization, but edit app data in the app rather than editing the views in TablePlus.
 
 ### Realtime Sync Between Expo Go And Web
 
@@ -142,19 +189,19 @@ docker compose up --build
 
 For Android emulator:
 
-```bash
-set EXPO_PUBLIC_API_URL=http://10.0.2.2:3000
+```powershell
+$env:EXPO_PUBLIC_API_URL = "http://10.0.2.2:3000"
 ```
 
 For real phone on same Wi-Fi (replace with your PC LAN IP):
 
-```bash
-set EXPO_PUBLIC_API_URL=http://192.168.1.100:3000
+```powershell
+$env:EXPO_PUBLIC_API_URL = "http://192.168.1.100:3000"
 ```
 
 3. Start frontend:
 
-```bash
+```powershell
 cd frontend
 npx expo start --clear
 ```
@@ -162,6 +209,18 @@ npx expo start --clear
 Notes:
 - Web and phone will auto-sync state through backend polling.
 - If one device is offline, it keeps local data and syncs when backend becomes reachable.
+- On the first connection to a database, the app loads the server's state. Back up any device-only data before connecting if the database is empty or contains different data.
+
+### Document Tools (Android)
+
+Open **Document tools** from Home to:
+
+- Capture multiple document pages with the camera and combine them into one PDF.
+- Export scanned pages individually as PNG or JPG.
+- Select an image from the gallery and convert it to PDF, PNG, or JPG.
+- Share the resulting file to save it elsewhere on the device or send it to another app.
+
+Camera permission is requested when scanning. Image processing and PDF creation happen locally in the app. This first version does not convert Office documents or render existing PDFs into images.
 
 ## Local Backend Without Docker
 

@@ -374,6 +374,21 @@ export default function HomeScreen() {
               {userApplications.length} application{userApplications.length === 1 ? '' : 's'} · {interviewCount} interview{interviewCount === 1 ? '' : 's'}
             </Text>
           </Pressable>
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Open document tools"
+            style={({ pressed }) => [styles.featureCard, pressed && styles.menuCardPressed]}
+            onPress={() => router.push('/(tabs)/documents' as never)}>
+            <View style={styles.featureCardTop}>
+              <View style={[styles.menuIcon, styles.documentsIcon]}>
+                <Ionicons name="scan-outline" size={22} color={theme.colors.buttonDark} />
+              </View>
+              <Ionicons name="arrow-forward" size={17} color={theme.colors.buttonDark} />
+            </View>
+            <Text style={styles.featureCardTitle}>Document tools</Text>
+            <Text style={styles.featureCardDescription}>Scan pages and convert images to PDF, PNG, or JPG.</Text>
+          </Pressable>
         </View>
 
       </ScrollView>
@@ -800,6 +815,9 @@ const styles = StyleSheet.create({
   },
   careerIcon: {
     backgroundColor: '#EAF5EF',
+  },
+  documentsIcon: {
+    backgroundColor: '#FFF6E7',
   },
   featureCardTitle: {
     marginTop: 12,
