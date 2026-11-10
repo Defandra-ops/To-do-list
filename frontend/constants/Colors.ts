@@ -28,6 +28,25 @@ export const theme = {
   },
 } as const;
 
+export const darkTheme = {
+  ...theme,
+  colors: {
+    ...theme.colors,
+    primary: '#1B3654',
+    accent: '#FFAD5C',
+    buttonDark: '#DDEBEE',
+    canvas: '#0A1728',
+    background: '#142235',
+    cardBackground: '#20334A',
+    textPrimary: '#F6F8FB',
+    textSecondary: '#B8C5D3',
+    textMuted: '#91A2B5',
+    border: '#344B62',
+    success: '#77D6B0',
+    warning: '#FFC36E',
+  },
+} as const;
+
 export default {
   light: {
     text: theme.colors.textPrimary,
@@ -37,10 +56,10 @@ export default {
     tabIconSelected: theme.colors.buttonDark,
   },
   dark: {
-    text: theme.colors.textPrimary,
-    background: theme.colors.background,
-    tint: theme.colors.buttonDark,
-    tabIconDefault: theme.colors.textMuted,
-    tabIconSelected: theme.colors.buttonDark,
+    text: darkTheme.colors.textPrimary,
+    background: darkTheme.colors.background,
+    tint: darkTheme.colors.buttonDark,
+    tabIconDefault: darkTheme.colors.textMuted,
+    tabIconSelected: darkTheme.colors.buttonDark,
   },
 };

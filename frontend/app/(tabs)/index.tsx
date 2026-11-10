@@ -3,7 +3,7 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useRouter } from 'expo-router';
 import { useState } from 'react';
-import { Image, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import {
@@ -14,6 +14,8 @@ import {
 } from '@/components/TodoStore';
 import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
 
 type ApplicationDraft = Pick<JobApplication, 'company' | 'role' | 'status' | 'appliedDate' | 'jobUrl' | 'notes'>;
 
@@ -33,6 +35,15 @@ const applicationStatusColors: Record<JobApplicationStatus, { background: string
   Offer: { background: '#EAF5EF', text: '#34734E' },
   Rejected: { background: '#FFF1EC', text: '#A64B3C' },
   Cancelled: { background: '#EEF0F2', text: '#5D6670' },
+};
+
+const darkApplicationStatusColors: Record<JobApplicationStatus, { background: string; text: string }> = {
+  Applied: { background: '#294653', text: '#9AD7EB' },
+  Screening: { background: '#39324D', text: '#C7A9F2' },
+  Interview: { background: '#4A3E28', text: '#F2CC78' },
+  Offer: { background: '#2B4639', text: '#9AD7B3' },
+  Rejected: { background: '#4A302D', text: '#FF9A8B' },
+  Cancelled: { background: '#343D45', text: '#BAC4CD' },
 };
 
 const menuItems = [
@@ -80,6 +91,8 @@ const escapeCsvCell = (value: string) => {
 };
 
 export default function HomeScreen() {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   const router = useRouter();
   const {
     tasks,
@@ -293,7 +306,10 @@ export default function HomeScreen() {
               key={item.title}
               accessibilityRole="button"
               accessibilityLabel={`${item.title}. ${item.description}`}
-              style={({ pressed }) => [styles.menuCard, pressed && styles.menuCardPressed]}
+              style={({ pressed }) => [
+                styles.menuCard,
+                pressed && styles.menuCardPressed,
+              ]}
               onPress={() => openMenuItem(item.route)}>
               <View style={[styles.menuIcon, { backgroundColor: item.color }]}>
                 <Ionicons
@@ -398,7 +414,9 @@ export default function HomeScreen() {
         animationType="fade"
         visible={isApplicationTrackerVisible}
         onRequestClose={closeApplicationTracker}>
-        <View style={styles.applicationModalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.applicationModalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Pressable
             accessibilityLabel="Close job tracker"
             style={StyleSheet.absoluteFill}
@@ -431,7 +449,7 @@ export default function HomeScreen() {
                   accessibilityLabel="Add job application"
                   style={styles.addApplicationButton}
                   onPress={openNewApplicationForm}>
-                  <Ionicons name="add" size={21} color={theme.colors.cardBackground} />
+                  <Ionicons name="add" size={21} color={theme.colors.actionForeground} />
                 </Pressable>
               </View>
             </View>
@@ -461,8 +479,11 @@ export default function HomeScreen() {
             <ScrollView
               style={styles.applicationTrackerList}
               contentContainerStyle={styles.applicationTrackerListContent}
-              keyboardShouldPersistTaps="handled">
-              {visibleApplications.map((application) => (
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
+              {visibleApplications.map((application) => {
+                const statusColors = theme.isDark ? darkApplicationStatusColors : applicationStatusColors;
+                return (
                 <View key={application.id} style={styles.applicationCard}>
                   <View style={styles.applicationCardHeader}>
                     <View style={styles.applicationIdentity}>
@@ -471,12 +492,12 @@ export default function HomeScreen() {
                     </View>
                     <View style={[
                       styles.applicationStatusBadge,
-                      { backgroundColor: applicationStatusColors[application.status].background },
+                      { backgroundColor: statusColors[application.status].background },
                     ]}>
                       <Text
                         style={[
                           styles.applicationStatusText,
-                          { color: applicationStatusColors[application.status].text },
+                          { color: statusColors[application.status].text },
                         ]}>
                         {application.status}
                       </Text>
@@ -510,7 +531,8 @@ export default function HomeScreen() {
                     </Pressable>
                   </View>
                 </View>
-              ))}
+                );
+              })}
               {userApplications.length === 0 ? (
                 <View style={styles.applicationsEmpty}>
                   <Ionicons name="briefcase-outline" size={25} color={theme.colors.textMuted} />
@@ -524,7 +546,7 @@ export default function HomeScreen() {
               ) : null}
             </ScrollView>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       <Modal
@@ -532,12 +554,15 @@ export default function HomeScreen() {
         animationType="fade"
         visible={isApplicationFormVisible}
         onRequestClose={closeApplicationForm}>
-        <View style={styles.applicationModalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.applicationModalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Pressable accessibilityLabel="Close application editor" style={StyleSheet.absoluteFill} onPress={closeApplicationForm} />
           <ScrollView
             style={styles.applicationModalScroll}
             contentContainerStyle={styles.applicationModalPanel}
-            keyboardShouldPersistTaps="handled">
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
             <Text style={styles.applicationModalTitle}>
               {editingApplicationId ? 'Edit application' : 'Track a job application'}
             </Text>
@@ -620,13 +645,13 @@ export default function HomeScreen() {
               </Pressable>
             </View>
           </ScrollView>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,

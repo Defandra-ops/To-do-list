@@ -2,12 +2,14 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImagePicker from 'expo-image-picker';
 import { useState } from 'react';
-import { Image, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTodoStore, type UserAccount } from '@/components/TodoStore';
 import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
 
 type ProfileDraft = {
   name: string;
@@ -24,6 +26,8 @@ const createDraft = (user: UserAccount): ProfileDraft => ({
 });
 
 export default function UsersScreen() {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   const { users, activeUserId, addUser, setActiveUserId, updateUserProfile } = useTodoStore();
   const [nameDraft, setNameDraft] = useState('');
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
@@ -50,7 +54,6 @@ export default function UsersScreen() {
   const chooseProfilePhoto = async () => {
     try {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
@@ -107,8 +110,14 @@ export default function UsersScreen() {
   const activeUserName = users.find((user) => user.id === activeUserId)?.name ?? 'No user';
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <SafeAreaView style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
         <Text style={styles.title}>People</Text>
         <Text style={styles.subtitle}>Manage profiles and keep task progress separate for each person.</Text>
 
@@ -141,7 +150,7 @@ export default function UsersScreen() {
               accessibilityLabel="Create profile"
               style={styles.addButton}
               onPress={handleCreateOrLogin}>
-              <Ionicons name="add" size={22} color={theme.colors.cardBackground} />
+              <Ionicons name="add" size={22} color={theme.colors.actionForeground} />
             </Pressable>
           </View>
         </View>
@@ -244,7 +253,7 @@ export default function UsersScreen() {
                         <Text style={styles.cancelButtonText}>Cancel</Text>
                       </Pressable>
                       <Pressable style={styles.saveButton} onPress={saveProfile}>
-                        <Ionicons name="checkmark" size={17} color={theme.colors.cardBackground} />
+                        <Ionicons name="checkmark" size={17} color={theme.colors.actionForeground} />
                         <Text style={styles.saveButtonText}>Save profile</Text>
                       </Pressable>
                     </View>
@@ -256,11 +265,14 @@ export default function UsersScreen() {
           {users.length === 0 ? <Text style={styles.panelBody}>No profiles yet.</Text> : null}
         </View>
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
 function ProfileAvatar({ name, photoUri, size }: { name: string; photoUri: string; size: number }) {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   if (photoUri) {
     return <Image source={{ uri: photoUri }} style={{ width: size, height: size, borderRadius: size / 2 }} />;
   }
@@ -274,7 +286,7 @@ function ProfileAvatar({ name, photoUri, size }: { name: string; photoUri: strin
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,

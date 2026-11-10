@@ -7,6 +7,8 @@ import { getUserTaskProgress, Task, useTodoStore } from '@/components/TodoStore'
 import { LocalizedText as Text } from '@/components/LocalizedText';
 import { useAppSettings } from '@/components/AppSettings';
 import { theme } from '@/constants/Colors';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
 
 const toIsoDate = (date: Date) =>
   `${date.getFullYear()}-${`${date.getMonth() + 1}`.padStart(2, '0')}-${`${date.getDate()}`.padStart(2, '0')}`;
@@ -33,12 +35,12 @@ const occursOnDate = (task: Task, date: string) => {
   return false;
 };
 
-const statusColor = (status: string) => {
-  if (status === 'Overdue') return theme.colors.accent;
-  if (status === 'Due soon') return theme.colors.warning;
-  if (status === 'Completed') return theme.colors.success;
-  if (status === 'Upcoming') return theme.colors.textSecondary;
-  return theme.colors.buttonDark;
+const statusColor = (status: string, colors: { [Key in keyof typeof theme.colors]: string }) => {
+  if (status === 'Overdue') return colors.accent;
+  if (status === 'Due soon') return colors.warning;
+  if (status === 'Completed') return colors.success;
+  if (status === 'Upcoming') return colors.textSecondary;
+  return colors.buttonDark;
 };
 
 const formatDate = (date: string, language: 'en' | 'id') =>
@@ -62,6 +64,8 @@ const getOccupiedDayCount = (startDate: string, endDate: string) => {
 };
 
 export default function CalendarScreen({ embedded = false }: { embedded?: boolean }) {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   const { language } = useAppSettings();
   const { tasks: allTasks, activeUserId } = useTodoStore();
   const tasks = useMemo(
@@ -121,7 +125,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
     const status = getTaskStatus(task, today, isCompletedForActiveUser(task));
     return (
       <Pressable key={task.id} style={styles.taskRow} onPress={() => setModalTask(task)}>
-        <View style={[styles.taskAccent, { backgroundColor: statusColor(status) }]} />
+        <View style={[styles.taskAccent, { backgroundColor: statusColor(status, theme.colors) }]} />
         <View style={styles.taskDetails}>
           <Text style={styles.taskTitle}>{task.title}</Text>
           <Text style={styles.taskMeta}>
@@ -131,7 +135,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
           </Text>
             {task.appName ? <Text style={styles.taskMeta}>{task.appName}</Text> : null}
         </View>
-        <Text style={[styles.statusText, { color: statusColor(status) }]}>{status}</Text>
+        <Text style={[styles.statusText, { color: statusColor(status, theme.colors) }]}>{status}</Text>
         <Ionicons name="chevron-forward" size={16} color={theme.colors.textMuted} />
       </Pressable>
     );
@@ -348,10 +352,10 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                   </View>
                 ) : null}
                 <View style={styles.detailLine}>
-                  <Ionicons name="flag-outline" size={18} color={statusColor(getTaskStatus(modalTask, today, isCompletedForActiveUser(modalTask)))} />
+                  <Ionicons name="flag-outline" size={18} color={statusColor(getTaskStatus(modalTask, today, isCompletedForActiveUser(modalTask)), theme.colors)} />
                   <View style={styles.detailTextWrap}>
                     <Text style={styles.detailLabel}>Status</Text>
-                    <Text style={[styles.detailValue, { color: statusColor(getTaskStatus(modalTask, today, isCompletedForActiveUser(modalTask))) }]}>
+                    <Text style={[styles.detailValue, { color: statusColor(getTaskStatus(modalTask, today, isCompletedForActiveUser(modalTask)), theme.colors) }]}>
                       {getTaskStatus(modalTask, today, isCompletedForActiveUser(modalTask))}
                     </Text>
                   </View>
@@ -371,7 +375,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   content: { paddingHorizontal: 18, paddingTop: 14, paddingBottom: 36 },
   embeddedContainer: { flex: 0, backgroundColor: 'transparent' },

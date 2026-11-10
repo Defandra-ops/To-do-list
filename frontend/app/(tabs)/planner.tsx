@@ -2,10 +2,12 @@ import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/datetimepicker';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
+  KeyboardAvoidingView,
+  Keyboard,
   Modal,
   Platform,
   Pressable,
@@ -16,9 +18,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { getUserTaskProgress, useTodoStore } from '@/components/TodoStore';
+import { getUserTaskProgress, useTodoStore, type Task } from '@/components/TodoStore';
 import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/components/LocalizedText';
 import { useAppSettings } from '@/components/AppSettings';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
 import { getInstalledApps, type InstalledApp } from '@/modules/installed-app-picker';
 import { theme } from '@/constants/Colors';
 
@@ -100,6 +104,8 @@ const parseTime = (time: string) => {
 const toTimeValue = (date: Date) => `${`${date.getHours()}`.padStart(2, '0')}:${`${date.getMinutes()}`.padStart(2, '0')}`;
 
 export default function PlannerScreen() {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   const { language } = useAppSettings();
   const {
     tasks,
@@ -154,6 +160,20 @@ export default function PlannerScreen() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
+  const taskListRef = useRef<FlatList<Task>>(null);
+  const pendingSubtaskScrollIndex = useRef<number | null>(null);
+
+  const scrollToFocusedSubtask = () => {
+    const index = pendingSubtaskScrollIndex.current;
+    if (index === null) return;
+    taskListRef.current?.scrollToIndex({ index, viewPosition: 0.12, animated: true });
+    pendingSubtaskScrollIndex.current = null;
+  };
+
+  useEffect(() => {
+    const subscription = Keyboard.addListener('keyboardDidShow', scrollToFocusedSubtask);
+    return () => subscription.remove();
+  }, []);
 
   const pickerMonthDays = useMemo(() => {
     const firstWeekday = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth(), 1).getDay();
@@ -190,6 +210,19 @@ export default function PlannerScreen() {
       return accumulator;
     }, {});
   }, [users]);
+  const visibleTasks = useMemo(
+    () => tasks.filter(
+      (task) =>
+        task.assignedUserIds.includes(activeUserId) ||
+        (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId)
+    ),
+    [activeUserId, tasks]
+  );
+
+  const focusSubtaskInput = (index: number) => {
+    pendingSubtaskScrollIndex.current = index;
+    if (Keyboard.isVisible()) requestAnimationFrame(scrollToFocusedSubtask);
+  };
 
   const stats = useMemo(() => {
     const userTasks = tasks.filter(
@@ -464,13 +497,13 @@ export default function PlannerScreen() {
   };
 
   return (
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
     <SafeAreaView style={styles.container}>
       <FlatList
-        data={tasks.filter(
-          (task) =>
-            task.assignedUserIds.includes(activeUserId) ||
-            (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId)
-        )}
+        ref={taskListRef}
+        data={visibleTasks}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.content}
         ListHeaderComponent={
@@ -639,19 +672,24 @@ export default function PlannerScreen() {
               {formError ? <Text style={styles.errorText}>{formError}</Text> : null}
 
               <LinearGradient
-                colors={[theme.colors.buttonDark, theme.colors.buttonDark]}
+                colors={[theme.colors.actionBackground, theme.colors.actionBackground]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.primaryButtonGradient}>
                 <Pressable style={styles.primaryButton} onPress={addTaskFromDraft}>
-                  <Ionicons name="add" size={18} color={theme.colors.cardBackground} />
+                  <Ionicons name="add" size={18} color={theme.colors.actionForeground} />
                   <Text style={styles.primaryButtonText}>Create Task</Text>
                 </Pressable>
               </LinearGradient>
             </View>
           </View>
         }
-        renderItem={({ item }) => {
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}
+        onScrollToIndexFailed={({ index, averageItemLength }) => {
+          taskListRef.current?.scrollToOffset({ offset: averageItemLength * index, animated: true });
+        }}
+        renderItem={({ item, index }) => {
           const taskProgress = getUserTaskProgress(item, activeUserId);
           const isCompleted = taskProgress.completed;
           const total = item.subtasks.length;
@@ -813,18 +851,25 @@ export default function PlannerScreen() {
 
               <View style={styles.subtaskComposerRow}>
                 <View style={styles.subtaskPeriodBadge}>
-                  <Text style={styles.subtaskPeriodBadgeText}>Daily</Text>
+                  <Text style={styles.subtaskPeriodBadgeText}>Steps</Text>
                 </View>
                 <TextInput
+                  accessibilityLabel={`Add a subtask to ${item.title}`}
                   style={styles.subtaskInput}
                   placeholder="Add subtask..."
                   placeholderTextColor={theme.colors.textSecondary}
                   value={subtaskDrafts[item.id] ?? ''}
                   onChangeText={(text) => setSubtaskDraft(item.id, text)}
+                  onFocus={() => focusSubtaskInput(index)}
                   onSubmitEditing={() => addSubtaskFromDraft(item.id)}
                   returnKeyType="done"
+                  blurOnSubmit={false}
                 />
-                <Pressable style={styles.miniButton} onPress={() => addSubtaskFromDraft(item.id)}>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel={`Add subtask to ${item.title}`}
+                  style={styles.miniButton}
+                  onPress={() => addSubtaskFromDraft(item.id)}>
                   <Ionicons name="add" size={16} color={theme.colors.buttonDark} />
                 </Pressable>
               </View>
@@ -838,6 +883,7 @@ export default function PlannerScreen() {
                         style={styles.subtaskEditInput}
                         value={subtaskEditDraft}
                         onChangeText={setSubtaskEditDraft}
+                        onFocus={() => focusSubtaskInput(index)}
                         onSubmitEditing={() => saveSubtaskTitle(item.id)}
                         returnKeyType="done"
                         autoFocus
@@ -896,13 +942,18 @@ export default function PlannerScreen() {
         animationType="fade"
         visible={editingTaskId !== null}
         onRequestClose={() => setEditingTaskId(null)}>
-        <View style={styles.taskEditBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.taskEditBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Pressable
             accessibilityLabel="Close task editor"
             style={StyleSheet.absoluteFill}
             onPress={() => setEditingTaskId(null)}
           />
-          <View style={styles.taskEditPanel}>
+          <ScrollView
+            style={styles.taskEditScroll}
+            contentContainerStyle={styles.taskEditPanel}
+            keyboardShouldPersistTaps="handled">
             <Text style={styles.taskEditTitle}>Edit task</Text>
             <Text style={styles.taskEditLabel}>Task title</Text>
             <TextInput
@@ -942,8 +993,8 @@ export default function PlannerScreen() {
                 <Text style={styles.taskEditSaveText}>Save changes</Text>
               </Pressable>
             </View>
-          </View>
-        </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </Modal>
 
       {Platform.OS === 'android' && activeTimePicker ? (
@@ -1119,7 +1170,9 @@ export default function PlannerScreen() {
         animationType="fade"
         visible={activeAppPicker !== null}
         onRequestClose={() => setActiveAppPicker(null)}>
-        <View style={styles.appModalBackdrop}>
+        <KeyboardAvoidingView
+          style={styles.appModalBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
           <Pressable
             accessibilityLabel="Close installed app picker"
             style={StyleSheet.absoluteFill}
@@ -1186,13 +1239,14 @@ export default function PlannerScreen() {
               <Text style={styles.appPickerStateText}>No matching launchable apps found.</Text>
             )}
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
     </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,
@@ -1403,6 +1457,11 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     padding: 20,
     backgroundColor: 'rgba(57, 83, 91, 0.48)',
+  },
+  taskEditScroll: {
+    flexGrow: 0,
+    maxHeight: '90%',
+    borderRadius: theme.borderRadius.lg,
   },
   taskEditPanel: {
     gap: 12,
@@ -1750,7 +1809,7 @@ const styles = StyleSheet.create({
   },
   datePickerDayToday: {
     color: theme.colors.buttonDark,
-    fontFamily: 'Nunito_900Black',
+    fontFamily: 'Nunito_800ExtraBold',
   },
   datePickerDayNumberSelected: {
     color: theme.colors.textPrimary,
@@ -2226,9 +2285,9 @@ const styles = StyleSheet.create({
     fontFamily: 'Nunito_600SemiBold',
   },
   miniButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: '#EAF7FA',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2237,6 +2296,7 @@ const styles = StyleSheet.create({
   },
   subtaskRow: {
     marginTop: 8,
+    minHeight: 40,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
@@ -2257,9 +2317,9 @@ const styles = StyleSheet.create({
     flexShrink: 1,
   },
   subtaskRemove: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#F3F8FA',
     alignItems: 'center',
     justifyContent: 'center',

@@ -1,13 +1,17 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { useTodoStore } from '@/components/TodoStore';
 import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
 
 export default function NotesScreen() {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   const { notes, users, addNote, updateNote, removeNote } = useTodoStore();
   const [titleDraft, setTitleDraft] = useState('');
   const [contentDraft, setContentDraft] = useState('');
@@ -48,8 +52,14 @@ export default function NotesScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView
+      style={styles.container}
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <SafeAreaView style={styles.container}>
+      <ScrollView
+        contentContainerStyle={styles.content}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode={Platform.OS === 'ios' ? 'interactive' : 'on-drag'}>
         <View style={styles.header}>
           <Text style={styles.eyebrow}>YOUR THOUGHTS</Text>
           <Text style={styles.title}>Notes</Text>
@@ -93,7 +103,7 @@ export default function NotesScreen() {
               </Pressable>
             ) : null}
             <Pressable accessibilityRole="button" style={styles.saveButton} onPress={saveNote}>
-              <Ionicons name={editingNoteId ? 'checkmark' : 'add'} size={19} color={theme.colors.cardBackground} />
+              <Ionicons name={editingNoteId ? 'checkmark' : 'add'} size={19} color={theme.colors.actionForeground} />
               <Text style={styles.saveButtonText}>{editingNoteId ? 'Save changes' : 'Add note'}</Text>
             </Pressable>
           </View>
@@ -146,11 +156,12 @@ export default function NotesScreen() {
           </View>
         ) : null}
       </ScrollView>
-    </SafeAreaView>
+      </SafeAreaView>
+    </KeyboardAvoidingView>
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: theme.colors.background,

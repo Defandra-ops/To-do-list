@@ -12,11 +12,12 @@ import { Stack, useRouter } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect } from 'react';
 import * as Notifications from 'expo-notifications';
+import { StatusBar } from 'expo-status-bar';
 import 'react-native-reanimated';
 
-import { useColorScheme } from '@/components/useColorScheme';
 import { AppSettingsProvider } from '@/components/AppSettings';
 import { TodoStoreProvider } from '@/components/TodoStore';
+import { useAppTheme } from '@/components/useAppTheme';
 
 export {
 
@@ -57,7 +58,17 @@ export default function RootLayout() {
 }
 
 function RootLayoutNav() {
-  const colorScheme = useColorScheme();
+  return (
+    <AppSettingsProvider>
+      <TodoStoreProvider>
+        <RootNavigator />
+      </TodoStoreProvider>
+    </AppSettingsProvider>
+  );
+}
+
+function RootNavigator() {
+  const { colors, isDark } = useAppTheme();
   const router = useRouter();
 
   useEffect(() => {
@@ -72,16 +83,23 @@ function RootLayoutNav() {
   }, [router]);
 
   return (
-    <AppSettingsProvider>
-      <TodoStoreProvider>
-        <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-          <Stack>
-            <Stack.Screen name="welcome" options={{ headerShown: false }} />
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
-          </Stack>
-        </ThemeProvider>
-      </TodoStoreProvider>
-    </AppSettingsProvider>
+    <ThemeProvider value={{
+      ...(isDark ? DarkTheme : DefaultTheme),
+      colors: {
+        ...(isDark ? DarkTheme : DefaultTheme).colors,
+        background: colors.background,
+        card: colors.cardBackground,
+        text: colors.textPrimary,
+        border: colors.border,
+        primary: colors.buttonDark,
+      },
+    }}>
+      <StatusBar style={isDark ? 'light' : 'dark'} />
+      <Stack>
+        <Stack.Screen name="welcome" options={{ headerShown: false }} />
+        <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+        <Stack.Screen name="modal" options={{ presentation: 'modal' }} />
+      </Stack>
+    </ThemeProvider>
   );
 }

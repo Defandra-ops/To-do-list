@@ -5,16 +5,16 @@
 5    <uses-sdk android:minSdkVersion="24" />
 6
 7    <queries>
-7-->C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:2:3-7:13
+7-->C:\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:2:3-7:13
 8        <intent>
-8-->C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:3:5-6:14
+8-->C:\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:3:5-6:14
 9            <action android:name="android.intent.action.MAIN" />
-9-->C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:4:7-59
-9-->C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:4:15-56
+9-->C:\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:4:7-59
+9-->C:\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:4:15-56
 10
 11            <category android:name="android.intent.category.LAUNCHER" />
-11-->C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:5:7-67
-11-->C:\xampp8\htdocs\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:5:17-64
+11-->C:\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:5:7-67
+11-->C:\todo-app\frontend\modules\installed-app-picker\android\src\main\AndroidManifest.xml:5:17-64
 12        </intent>
 13    </queries>
 14

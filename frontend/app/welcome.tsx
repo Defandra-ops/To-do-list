@@ -4,8 +4,12 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LocalizedText as Text } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
 
 export default function WelcomeScreen() {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   const router = useRouter();
   const startApp = () => {
     router.replace('/(tabs)');
@@ -37,7 +41,7 @@ export default function WelcomeScreen() {
 
           <View style={styles.hero}>
             <View style={styles.calendarIconCircle}>
-              <Ionicons name="calendar" size={38} color={theme.colors.cardBackground} />
+              <Ionicons name="calendar" size={38} color={theme.colors.actionForeground} />
               <Ionicons
                 name="checkmark"
                 size={19}
@@ -63,7 +67,7 @@ export default function WelcomeScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   canvas: {
     flex: 1,
     backgroundColor: '#0B1220',

@@ -39,6 +39,30 @@ adb reverse "tcp:$port" "tcp:$port" | Out-Null
 
 Write-Host 'Building and installing the Android development app...'
 Set-Location $frontendPath
+$gradleWrapperPropertiesPath = Join-Path $frontendPath 'android\gradle\wrapper\gradle-wrapper.properties'
+$gradleWrapperProperties = Get-Content -LiteralPath $gradleWrapperPropertiesPath -Raw
+$requiredGradleDistribution = 'distributionUrl=https\://services.gradle.org/distributions/gradle-8.14.3-bin.zip'
+if ($gradleWrapperProperties -notmatch [regex]::Escape($requiredGradleDistribution)) {
+  $updatedGradleWrapperProperties = $gradleWrapperProperties -replace '(?m)^distributionUrl=.*$', $requiredGradleDistribution
+  if ($updatedGradleWrapperProperties -eq $gradleWrapperProperties) {
+    throw "Could not set the supported Gradle version in $gradleWrapperPropertiesPath."
+  }
+  [System.IO.File]::WriteAllText(
+    $gradleWrapperPropertiesPath,
+    $updatedGradleWrapperProperties,
+    [System.Text.UTF8Encoding]::new($false)
+  )
+}
+
+$autolinkingConfigPath = Join-Path $frontendPath 'android\build\generated\autolinking\autolinking.json'
+if (Test-Path -LiteralPath $autolinkingConfigPath) {
+  $cachedAutolinkingRoot = (Get-Content -LiteralPath $autolinkingConfigPath -Raw | ConvertFrom-Json).root
+  $currentFrontendRoot = (Resolve-Path -LiteralPath $frontendPath).Path
+  if ($cachedAutolinkingRoot -ne $currentFrontendRoot) {
+    Remove-Item -LiteralPath $autolinkingConfigPath -Force
+  }
+}
+
 npx expo run:android --no-bundler --no-build-cache
 if ($LASTEXITCODE -ne 0) {
   throw 'Failed to build or install the Android development app.'

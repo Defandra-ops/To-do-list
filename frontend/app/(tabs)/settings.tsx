@@ -3,8 +3,10 @@ import { useState } from 'react';
 import { Platform, Pressable, ScrollView, StyleSheet, Switch, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
-import { useAppSettings, type AppLanguage } from '@/components/AppSettings';
-import { theme } from '@/constants/Colors';
+import { useAppSettings, type AppLanguage, type ThemeMode } from '@/components/AppSettings';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
+import { theme as lightTheme } from '@/constants/Colors';
 
 const languages: { code: AppLanguage; label: string; nativeLabel: string }[] = [
   { code: 'en', label: 'English', nativeLabel: 'English' },
@@ -29,6 +31,12 @@ const copy = {
     disabled: 'Disabled',
     remindersPlatformNote: 'Task reminder notifications are available in the mobile app.',
     notificationSaveError: 'Could not save your notification preference. Please try again.',
+    appearance: 'Appearance',
+    appearanceDescription: 'Choose light, dark, or follow your device setting.',
+    system: 'System',
+    light: 'Light',
+    dark: 'Dark',
+    appearanceSaveError: 'Could not save your appearance preference. Please try again.',
   },
   id: {
     title: 'Pengaturan',
@@ -47,6 +55,12 @@ const copy = {
     disabled: 'Nonaktif',
     remindersPlatformNote: 'Notifikasi pengingat tugas tersedia di aplikasi seluler.',
     notificationSaveError: 'Preferensi notifikasi tidak dapat disimpan. Silakan coba lagi.',
+    appearance: 'Tampilan',
+    appearanceDescription: 'Pilih tampilan terang, gelap, atau ikuti pengaturan perangkat.',
+    system: 'Sistem',
+    light: 'Terang',
+    dark: 'Gelap',
+    appearanceSaveError: 'Preferensi tampilan tidak dapat disimpan. Silakan coba lagi.',
   },
 } as const;
 
@@ -54,12 +68,17 @@ export default function SettingsScreen() {
   const {
     language,
     notificationsEnabled,
+    themeMode,
     isReady,
     setLanguage,
     setNotificationsEnabled,
+    setThemeMode,
   } = useAppSettings();
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   const [saveError, setSaveError] = useState('');
   const [notificationSaveError, setNotificationSaveError] = useState('');
+  const [appearanceSaveError, setAppearanceSaveError] = useState('');
   const text = copy[language];
 
   const selectLanguage = async (nextLanguage: AppLanguage) => {
@@ -83,12 +102,57 @@ export default function SettingsScreen() {
     }
   };
 
+  const selectTheme = async (nextThemeMode: ThemeMode) => {
+    if (nextThemeMode === themeMode || !isReady) return;
+    setAppearanceSaveError('');
+    try {
+      await setThemeMode(nextThemeMode);
+    } catch (error) {
+      console.error('Failed to save app appearance setting:', error);
+      setAppearanceSaveError(text.appearanceSaveError);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.content}>
         <View style={styles.heading}>
           <Text style={styles.title}>{text.title}</Text>
           <Text style={styles.subtitle}>{text.subtitle}</Text>
+        </View>
+
+        <View style={styles.section}>
+          <View style={styles.sectionHeading}>
+            <Ionicons name="contrast-outline" size={19} color={theme.colors.buttonDark} />
+            <Text style={styles.sectionTitle}>{text.appearance}</Text>
+          </View>
+          <Text style={styles.description}>{text.appearanceDescription}</Text>
+          <View style={styles.options}>
+            {([
+              ['system', text.system],
+              ['light', text.light],
+              ['dark', text.dark],
+            ] as const).map(([mode, label]) => {
+              const isSelected = themeMode === mode;
+              return (
+                <Pressable
+                  key={mode}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: isSelected, disabled: !isReady }}
+                  disabled={!isReady}
+                  onPress={() => void selectTheme(mode)}
+                  style={[styles.languageOption, isSelected && styles.languageOptionSelected]}>
+                  <Text style={styles.languageName}>{label}</Text>
+                  {isSelected ? (
+                    <Ionicons name="checkmark-circle" size={18} color={theme.colors.success} />
+                  ) : (
+                    <Ionicons name="ellipse-outline" size={19} color={theme.colors.textMuted} />
+                  )}
+                </Pressable>
+              );
+            })}
+          </View>
+          {appearanceSaveError ? <Text style={styles.error}>{appearanceSaveError}</Text> : null}
         </View>
 
         <View style={styles.section}>
@@ -109,7 +173,7 @@ export default function SettingsScreen() {
               disabled={!isReady}
               onValueChange={(enabled) => void toggleNotifications(enabled)}
               trackColor={{ false: theme.colors.border, true: theme.colors.primary }}
-              thumbColor={theme.colors.cardBackground}
+              thumbColor={theme.colors.actionForeground}
             />
           </View>
           {Platform.OS === 'web' ? <Text style={styles.note}>{text.remindersPlatformNote}</Text> : null}
@@ -173,10 +237,10 @@ export default function SettingsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: theme.colors.background,
+    backgroundColor: lightTheme.colors.background,
   },
   content: {
     padding: 20,
@@ -186,13 +250,13 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   title: {
-    color: theme.colors.textPrimary,
+    color: lightTheme.colors.textPrimary,
     fontSize: 26,
     fontFamily: 'Nunito_800ExtraBold',
   },
   subtitle: {
     marginTop: 4,
-    color: theme.colors.textSecondary,
+    color: lightTheme.colors.textSecondary,
     fontSize: 13,
     fontFamily: 'Nunito_500Medium',
   },
@@ -200,8 +264,8 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: theme.colors.border,
-    backgroundColor: theme.colors.cardBackground,
+    borderColor: lightTheme.colors.border,
+    backgroundColor: lightTheme.colors.cardBackground,
   },
   sectionHeading: {
     flexDirection: 'row',
@@ -209,13 +273,13 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   sectionTitle: {
-    color: theme.colors.textPrimary,
+    color: lightTheme.colors.textPrimary,
     fontSize: 16,
     fontFamily: 'Nunito_800ExtraBold',
   },
   description: {
     marginTop: 4,
-    color: theme.colors.textSecondary,
+    color: lightTheme.colors.textSecondary,
     fontSize: 12,
     lineHeight: 18,
     fontFamily: 'Nunito_500Medium',
@@ -232,24 +296,24 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     borderWidth: 1,
-    borderColor: theme.colors.border,
+    borderColor: lightTheme.colors.border,
     borderRadius: 13,
     backgroundColor: '#F7FBFC',
   },
   languageOptionSelected: {
-    borderColor: theme.colors.primary,
+    borderColor: lightTheme.colors.primary,
     backgroundColor: '#EFF9FC',
   },
   languageCopy: {
     gap: 1,
   },
   languageName: {
-    color: theme.colors.textPrimary,
+    color: lightTheme.colors.textPrimary,
     fontSize: 13,
     fontFamily: 'Nunito_800ExtraBold',
   },
   languageLabel: {
-    color: theme.colors.textSecondary,
+    color: lightTheme.colors.textSecondary,
     fontSize: 11,
     fontFamily: 'Nunito_500Medium',
   },
@@ -259,20 +323,20 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   selectedText: {
-    color: theme.colors.success,
+    color: lightTheme.colors.success,
     fontSize: 11,
     fontFamily: 'Nunito_700Bold',
   },
   note: {
     marginTop: 9,
-    color: theme.colors.textMuted,
+    color: lightTheme.colors.textMuted,
     fontSize: 11,
     lineHeight: 16,
     fontFamily: 'Nunito_500Medium',
   },
   error: {
     marginTop: 8,
-    color: theme.colors.accent,
+    color: lightTheme.colors.accent,
     fontSize: 12,
     fontFamily: 'Nunito_700Bold',
   },
@@ -304,7 +368,7 @@ const styles = StyleSheet.create({
   },
   preferenceState: {
     marginTop: 4,
-    color: theme.colors.buttonDark,
+    color: lightTheme.colors.buttonDark,
     fontSize: 11,
     fontFamily: 'Nunito_700Bold',
   },

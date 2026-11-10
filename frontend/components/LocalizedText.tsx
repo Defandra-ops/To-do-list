@@ -90,6 +90,7 @@ const indonesian: Record<string, string> = {
   Save: 'Simpan',
   'Repeat daily': 'Ulangi setiap hari',
   'Add subtask...': 'Tambahkan subtugas...',
+  Steps: 'Langkah',
   'No tasks yet. Start with one big goal above.': 'Belum ada tugas. Mulai dengan satu tujuan besar di atas.',
   'Edit task': 'Ubah tugas',
   'Task title': 'Judul tugas',

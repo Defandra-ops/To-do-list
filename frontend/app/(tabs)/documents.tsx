@@ -10,6 +10,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LocalizedText as Text } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
 
 type ScanPage = {
   id: string;
@@ -100,6 +102,8 @@ async function createPdf(pages: ScanPage[]) {
 }
 
 export default function DocumentsScreen() {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   const [scanPages, setScanPages] = useState<ScanPage[]>([]);
   const [scanFormat, setScanFormat] = useState<ImageFormat>('pdf');
   const [scanExportFiles, setScanExportFiles] = useState<Array<{ uri: string; page: number }>>([]);
@@ -135,7 +139,6 @@ export default function DocumentsScreen() {
         throw new Error('Camera permission is needed to scan a document.');
       }
       const result = await ImagePicker.launchCameraAsync({
-        mediaTypes: ['images'],
         allowsEditing: true,
         quality: 0.9,
       });
@@ -152,7 +155,6 @@ export default function DocumentsScreen() {
   const pickImage = async () => {
     await runAction(async () => {
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ['images'],
         allowsEditing: false,
         quality: 1,
       });
@@ -368,7 +370,7 @@ export default function DocumentsScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   content: { padding: 18, gap: 14 },
   heading: { marginBottom: 2 },

@@ -1,17 +1,21 @@
 import { Link, Stack } from 'expo-router';
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
-import { View } from '@/components/Themed';
 import { LocalizedText } from '@/components/LocalizedText';
 import { useAppSettings } from '@/components/AppSettings';
 import { translate } from '@/components/LocalizedText';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
+import { theme as lightTheme } from '@/constants/Colors';
 
 export default function NotFoundScreen() {
   const { language } = useAppSettings();
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   return (
     <>
       <Stack.Screen options={{ title: translate('Oops!', language) }} />
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: theme.colors.background }]}>
         <LocalizedText style={styles.title}>This screen doesn’t exist.</LocalizedText>
 
         <Link href="/" style={styles.link}>
@@ -22,16 +26,18 @@ export default function NotFoundScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     padding: 20,
+    backgroundColor: lightTheme.colors.background,
   },
   title: {
     fontSize: 20,
     fontWeight: 'bold',
+    color: lightTheme.colors.textPrimary,
   },
   link: {
     marginTop: 15,

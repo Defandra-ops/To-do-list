@@ -2,8 +2,12 @@ import { StatusBar } from 'expo-status-bar';
 import { StyleSheet, View } from 'react-native';
 import { LocalizedText as Text } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
 
 export default function ModalScreen() {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   return (
     <View style={styles.container}>
       <View style={styles.card}>
@@ -29,7 +33,7 @@ export default function ModalScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: 'center',

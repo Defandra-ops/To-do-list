@@ -6,6 +6,8 @@ import Svg, { Circle, G, Rect } from 'react-native-svg';
 import { getUserTaskProgress, Task, useTodoStore } from '@/components/TodoStore';
 import { LocalizedText as Text } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
+import { useAppTheme } from '@/components/useAppTheme';
+import { useThemedStyles } from '@/components/useThemedStyles';
 
 const getLocalIsoDate = () => {
   const today = new Date();
@@ -16,6 +18,8 @@ const getLocalIsoDate = () => {
 };
 
 export default function OverviewRecordScreen() {
+  const theme = useAppTheme();
+  const styles = useThemedStyles(baseStyles);
   const { tasks: allTasks, users, activeUserId, notes, jobApplications } = useTodoStore();
   const activeUserName = users.find((user) => user.id === activeUserId)?.name ?? 'User';
   const userNotes = useMemo(
@@ -319,7 +323,7 @@ export default function OverviewRecordScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const baseStyles = StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.colors.background },
   content: { padding: theme.spacing.md, paddingBottom: 42 },
   title: { marginTop: 8, color: theme.colors.textPrimary, fontSize: 26, fontFamily: 'Nunito_800ExtraBold' },
@@ -343,7 +347,7 @@ const styles = StyleSheet.create({
   activityValue: {
     color: theme.colors.textPrimary,
     fontSize: 25,
-    fontFamily: 'Nunito_900Black',
+    fontFamily: 'Nunito_800ExtraBold',
   },
   activityLabel: {
     marginTop: 2,
@@ -414,7 +418,7 @@ const styles = StyleSheet.create({
   },
   diagramWrap: { alignItems: 'center', justifyContent: 'center' },
   centerLabel: { position: 'absolute', alignItems: 'center', justifyContent: 'center' },
-  centerCount: { color: theme.colors.textPrimary, fontSize: 30, fontFamily: 'Nunito_900Black' },
+  centerCount: { color: theme.colors.textPrimary, fontSize: 30, fontFamily: 'Nunito_800ExtraBold' },
   centerText: { color: theme.colors.textSecondary, fontSize: 12, fontFamily: 'Nunito_700Bold' },
   legendRow: { marginTop: 8, flexDirection: 'row', justifyContent: 'center', flexWrap: 'wrap', gap: 14 },
   legendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },

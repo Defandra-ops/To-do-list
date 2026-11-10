@@ -5,7 +5,7 @@ import { Pressable } from 'react-native';
 
 import { useAppSettings } from '@/components/AppSettings';
 import { translate } from '@/components/LocalizedText';
-import { theme } from '@/constants/Colors';
+import { useAppTheme } from '@/components/useAppTheme';
 import { useClientOnlyValue } from '@/components/useClientOnlyValue';
 
 
@@ -18,6 +18,7 @@ function TabBarIcon(props: {
 
 export default function TabLayout() {
   const { language } = useAppSettings();
+  const theme = useAppTheme();
 
   return (
     <Tabs
@@ -38,6 +39,7 @@ export default function TabLayout() {
         headerStyle: {
           backgroundColor: theme.colors.cardBackground,
         },
+        headerTintColor: theme.colors.textPrimary,
         headerTitleStyle: {
           fontFamily: 'Nunito_800ExtraBold',
         },
