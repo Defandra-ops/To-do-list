@@ -4,11 +4,32 @@ import * as SecureStore from 'expo-secure-store';
 
 export type AppLanguage = 'en' | 'id';
 export type ThemeMode = 'light' | 'dark' | 'system';
-export type AccentColor = 'blue' | 'purple' | 'green' | 'orange';
+export const ACCENT_COLOR_PALETTE = [
+  { id: 'blue', light: '#72C9E4', dark: '#387789' },
+  { id: 'purple', light: '#A78BFA', dark: '#7B61B8' },
+  { id: 'green', light: '#65B98A', dark: '#3F8C68' },
+  { id: 'orange', light: '#F2A65A', dark: '#B66B2B' },
+  { id: 'teal', light: '#2DD4BF', dark: '#0F766E' },
+  { id: 'cyan', light: '#22D3EE', dark: '#0E7490' },
+  { id: 'indigo', light: '#818CF8', dark: '#4338CA' },
+  { id: 'violet', light: '#C084FC', dark: '#7E22CE' },
+  { id: 'pink', light: '#F472B6', dark: '#BE185D' },
+  { id: 'rose', light: '#FB7185', dark: '#BE123C' },
+  { id: 'red', light: '#EF6A6A', dark: '#B91C1C' },
+  { id: 'amber', light: '#FBBF24', dark: '#B45309' },
+  { id: 'lime', light: '#A3E635', dark: '#4D7C0F' },
+  { id: 'emerald', light: '#34D399', dark: '#047857' },
+  { id: 'sky', light: '#38BDF8', dark: '#0369A1' },
+  { id: 'slate', light: '#94A3B8', dark: '#475569' },
+] as const;
+export type AccentColor = (typeof ACCENT_COLOR_PALETTE)[number]['id'];
 export type DefaultView = 'home' | 'planner' | 'calendar' | 'overview';
 export type TaskPosition = 'top' | 'bottom';
 export type AppPreferenceKey =
   | 'accentColor'
+  | 'customAccentColor'
+  | 'customBackgroundColor'
+  | 'recentThemeColors'
   | 'defaultView'
   | 'timeFormat'
   | 'weekStartsOn'
@@ -26,6 +47,9 @@ export type AppPreferenceKey =
 
 export type AppPreferences = {
   accentColor: AccentColor;
+  customAccentColor: string | null;
+  customBackgroundColor: string | null;
+  recentThemeColors: string[];
   defaultView: DefaultView;
   timeFormat: '12h' | '24h';
   weekStartsOn: 'monday' | 'sunday';
@@ -44,6 +68,9 @@ export type AppPreferences = {
 
 const defaultPreferences: AppPreferences = {
   accentColor: 'blue',
+  customAccentColor: null,
+  customBackgroundColor: null,
+  recentThemeColors: [],
   defaultView: 'home',
   timeFormat: '12h',
   weekStartsOn: 'sunday',
@@ -111,9 +138,20 @@ export function AppSettingsProvider({ children }: { children: React.ReactNode })
         if (savedPreferences) {
           const parsed = JSON.parse(savedPreferences) as Partial<AppPreferences>;
           const nextPreferences = { ...defaultPreferences, ...parsed };
-          if (!['blue', 'purple', 'green', 'orange'].includes(nextPreferences.accentColor)) {
+          if (!ACCENT_COLOR_PALETTE.some(({ id }) => id === nextPreferences.accentColor)) {
             nextPreferences.accentColor = defaultPreferences.accentColor;
           }
+          if (nextPreferences.customAccentColor !== null && !/^#[0-9A-Fa-f]{6}$/.test(nextPreferences.customAccentColor ?? '')) {
+            nextPreferences.customAccentColor = null;
+          }
+          if (nextPreferences.customBackgroundColor !== null && !/^#[0-9A-Fa-f]{6}$/.test(nextPreferences.customBackgroundColor ?? '')) {
+            nextPreferences.customBackgroundColor = null;
+          }
+          nextPreferences.recentThemeColors = Array.isArray(nextPreferences.recentThemeColors)
+            ? nextPreferences.recentThemeColors
+                .filter((color): color is string => typeof color === 'string' && /^#[0-9A-Fa-f]{6}$/.test(color))
+                .slice(0, 8)
+            : [];
           if (!['home', 'planner', 'calendar', 'overview'].includes(nextPreferences.defaultView)) {
             nextPreferences.defaultView = defaultPreferences.defaultView;
           }

@@ -58,6 +58,11 @@ type AppPickerTarget = {
   taskId?: string;
 };
 
+type TaskTextEditor =
+  | { kind: 'task' }
+  | { kind: 'subtask'; taskId: string }
+  | { kind: 'editSubtask'; taskId: string; subtaskId: string };
+
 const isIsoDate = (value: string) => /^\d{4}-\d{2}-\d{2}$/.test(value);
 
 const formatIsoDate = (date: Date) => {
@@ -153,8 +158,8 @@ export default function PlannerScreen() {
   const [taskAssigneeDraft, setTaskAssigneeDraft] = useState<string[]>([]);
   const [taskEditError, setTaskEditError] = useState('');
   const [subtaskDrafts, setSubtaskDrafts] = useState<DraftMap>({});
-  const [editingSubtaskId, setEditingSubtaskId] = useState<string | null>(null);
-  const [subtaskEditDraft, setSubtaskEditDraft] = useState('');
+  const [textEditor, setTextEditor] = useState<TaskTextEditor | null>(null);
+  const [textEditorDraft, setTextEditorDraft] = useState('');
   const [milestoneDrafts, setMilestoneDrafts] = useState<MilestoneDraftMap>({});
   const [activeDatePicker, setActiveDatePicker] = useState<DatePickerTarget | null>(null);
   const [activeTimePicker, setActiveTimePicker] = useState<TimePickerTarget | null>(null);
@@ -300,27 +305,27 @@ export default function PlannerScreen() {
     };
   }, [activeUserId, tasks]);
 
-  const addTaskFromDraft = () => {
-    if (!taskDraft.trim()) return;
+  const addTaskFromDraft = (draft = taskDraft) => {
+    if (!draft.trim()) return false;
 
     if (startDateDraft && !isIsoDate(startDateDraft)) {
       setFormError('Start date must use YYYY-MM-DD');
-      return;
+      return false;
     }
 
     if (endDateDraft && !isIsoDate(endDateDraft)) {
       setFormError('Deadline must use YYYY-MM-DD');
-      return;
+      return false;
     }
 
     if (startDateDraft && endDateDraft && startDateDraft > endDateDraft) {
       setFormError('Start date must be before deadline');
-      return;
+      return false;
     }
 
     const assigneeIds = selectedAssigneeIds.length > 0 ? selectedAssigneeIds : [];
     addTask(
-      taskDraft,
+      draft,
       startDateDraft,
       endDateDraft,
       assigneeIds,
@@ -338,6 +343,7 @@ export default function PlannerScreen() {
     setAppPackageNameDraft('');
     setSelectedAssigneeIds([]);
     setFormError('');
+    return true;
   };
 
   const toggleAssignee = (userId: string) => {
@@ -486,11 +492,11 @@ export default function PlannerScreen() {
     if (Platform.OS === 'android') applyTimePickerValue(selectedTime);
   };
 
-  const addSubtaskFromDraft = (taskId: string) => {
-    const value = subtaskDrafts[taskId] ?? '';
-    if (!value.trim()) return;
+  const addSubtaskFromDraft = (taskId: string, value = subtaskDrafts[taskId] ?? '') => {
+    if (!value.trim()) return false;
     addSubtask(taskId, value);
     setSubtaskDraft(taskId, '');
+    return true;
   };
 
   const beginTaskEditing = (task: (typeof tasks)[number]) => {
@@ -521,15 +527,29 @@ export default function PlannerScreen() {
   };
 
   const beginSubtaskEditing = (subtaskId: string, title: string) => {
-    setEditingSubtaskId(subtaskId);
-    setSubtaskEditDraft(title);
+    const task = tasks.find((item) => item.subtasks.some((subtask) => subtask.id === subtaskId));
+    if (!task) return;
+    setTextEditor({ kind: 'editSubtask', taskId: task.id, subtaskId });
+    setTextEditorDraft(title);
   };
 
-  const saveSubtaskTitle = (taskId: string) => {
-    if (!editingSubtaskId || !subtaskEditDraft.trim()) return;
-    updateSubtask(taskId, editingSubtaskId, subtaskEditDraft);
-    setEditingSubtaskId(null);
-    setSubtaskEditDraft('');
+  const openTextEditor = (target: TaskTextEditor, initialValue: string) => {
+    setTextEditor(target);
+    setTextEditorDraft(initialValue);
+  };
+
+  const saveTextEditor = () => {
+    if (!textEditor) return;
+    let saved = false;
+    if (textEditor.kind === 'task') {
+      saved = addTaskFromDraft(textEditorDraft);
+    } else if (textEditor.kind === 'subtask') {
+      saved = addSubtaskFromDraft(textEditor.taskId, textEditorDraft);
+    } else if (textEditorDraft.trim()) {
+      updateSubtask(textEditor.taskId, textEditor.subtaskId, textEditorDraft);
+      saved = true;
+    }
+    if (saved) setTextEditor(null);
   };
 
   const saveMilestone = (taskId: string, draft: MilestoneDraft) => {
@@ -635,15 +655,14 @@ export default function PlannerScreen() {
 
             {!showHistory && (
               <View style={styles.composerCard}>
-              <TextInput
+              <Pressable
+                accessibilityRole="button"
                 style={styles.taskInput}
-                placeholder="Add a task..."
-                placeholderTextColor={theme.colors.textSecondary}
-                value={taskDraft}
-                onChangeText={setTaskDraft}
-                onFocus={(event) => focusPlannerInput(event.nativeEvent.target)}
-                returnKeyType="next"
-              />
+                onPress={() => openTextEditor({ kind: 'task' }, taskDraft)}>
+                <Text style={taskDraft ? styles.taskInputText : styles.taskInputPlaceholder}>
+                  {taskDraft || 'Add a task...'}
+                </Text>
+              </Pressable>
 
               <View style={styles.periodRow}>
                 <Text style={styles.periodLabel}>Task Period:</Text>
@@ -751,7 +770,7 @@ export default function PlannerScreen() {
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.primaryButtonGradient}>
-                <Pressable style={styles.primaryButton} onPress={addTaskFromDraft}>
+                <Pressable style={styles.primaryButton} onPress={() => addTaskFromDraft()}>
                   <Ionicons name="add" size={20} color={theme.colors.actionForeground} />
                   <Text style={styles.primaryButtonText}>Create Task</Text>
                 </Pressable>
@@ -795,7 +814,14 @@ export default function PlannerScreen() {
           return (
             <View style={[
               styles.taskCard,
-              isCompleted ? styles.taskCardComplete : isOverdue && styles.taskCardOverdue,
+              showHistory && isCompleted && {
+                backgroundColor: theme.isDark ? '#1E4939' : '#DDF5E8',
+                borderColor: theme.isDark ? '#3F8C68' : '#65B98A',
+              },
+              showHistory && isOverdue && {
+                backgroundColor: theme.isDark ? '#552F36' : '#FCE4E4',
+                borderColor: theme.isDark ? '#A64B55' : '#E57373',
+              },
             ]}>
               <View style={styles.taskTopRow}>
                 <Pressable style={styles.taskTitleRow} onPress={() => toggleTaskWithFeedback(item.id)}>
@@ -932,58 +958,27 @@ export default function PlannerScreen() {
                 <View style={styles.subtaskPeriodBadge}>
                   <Text style={styles.subtaskPeriodBadgeText}>Steps</Text>
                 </View>
-                <TextInput
+                <Pressable
+                  accessibilityRole="button"
                   accessibilityLabel={`Add a subtask to ${item.title}`}
                   style={styles.subtaskInput}
-                  placeholder="Add subtask..."
-                  placeholderTextColor={theme.colors.textSecondary}
-                  value={subtaskDrafts[item.id] ?? ''}
-                  onChangeText={(text) => setSubtaskDraft(item.id, text)}
-                  onFocus={(event) => focusPlannerInput(event.nativeEvent.target)}
-                  onSubmitEditing={() => addSubtaskFromDraft(item.id)}
-                  returnKeyType="done"
-                  blurOnSubmit={false}
-                />
+                  onPress={() => openTextEditor({ kind: 'subtask', taskId: item.id }, subtaskDrafts[item.id] ?? '')}>
+                  <Text style={subtaskDrafts[item.id] ? styles.taskInputText : styles.taskInputPlaceholder}>
+                    {subtaskDrafts[item.id] || 'Add subtask...'}
+                  </Text>
+                </Pressable>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel={`Add subtask to ${item.title}`}
                   style={styles.miniButton}
-                  onPress={() => addSubtaskFromDraft(item.id)}>
+                  onPress={() => openTextEditor({ kind: 'subtask', taskId: item.id }, subtaskDrafts[item.id] ?? '')}>
                   <Ionicons name="add" size={16} color={theme.colors.buttonDark} />
                 </Pressable>
               </View>
 
               {item.subtasks.map((subtask) => (
                 <View key={subtask.id} style={styles.subtaskRow}>
-                  {editingSubtaskId === subtask.id ? (
-                    <>
-                      <TextInput
-                        accessibilityLabel="Edit subtask title"
-                        style={styles.subtaskEditInput}
-                        value={subtaskEditDraft}
-                        onChangeText={setSubtaskEditDraft}
-                        onFocus={(event) => focusPlannerInput(event.nativeEvent.target)}
-                        onSubmitEditing={() => saveSubtaskTitle(item.id)}
-                        returnKeyType="done"
-                        autoFocus
-                      />
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Save subtask"
-                        style={styles.subtaskRemove}
-                        onPress={() => saveSubtaskTitle(item.id)}>
-                        <Ionicons name="checkmark" size={17} color={theme.colors.success} />
-                      </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel="Cancel subtask edit"
-                        style={styles.subtaskRemove}
-                        onPress={() => setEditingSubtaskId(null)}>
-                        <Ionicons name="close" size={16} color={theme.colors.textSecondary} />
-                      </Pressable>
-                    </>
-                  ) : (
-                    <>
+                  <>
                       <Pressable style={styles.subtaskLeft} onPress={() => toggleSubtaskWithFeedback(item.id, subtask.id)}>
                         <Ionicons
                           name={taskProgress.subtasks[subtask.id] ? 'checkbox' : 'square-outline'}
@@ -1006,8 +1001,7 @@ export default function PlannerScreen() {
                         onPress={() => removeSubtask(item.id, subtask.id)}>
                         <Ionicons name="close" size={16} color={theme.colors.accent} />
                       </Pressable>
-                    </>
-                  )}
+                  </>
                 </View>
               ))}
             </View>
@@ -1019,6 +1013,56 @@ export default function PlannerScreen() {
           </Text>
         }
       />
+
+      <Modal
+        transparent
+        animationType="fade"
+        visible={textEditor !== null}
+        onRequestClose={() => setTextEditor(null)}
+        statusBarTranslucent>
+        <KeyboardAvoidingView
+          style={styles.textEditorBackdrop}
+          behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+          <Pressable
+            accessibilityLabel="Close text editor"
+            style={StyleSheet.absoluteFill}
+            onPress={() => setTextEditor(null)}
+          />
+          <View style={styles.textEditorPanel}>
+            <Text style={styles.taskEditTitle}>
+              {textEditor?.kind === 'task' ? 'New task' : textEditor?.kind === 'subtask' ? 'New subtask' : 'Edit subtask'}
+            </Text>
+            <TextInput
+              accessibilityLabel={textEditor?.kind === 'task' ? 'Task title' : 'Subtask title'}
+              style={styles.taskEditInput}
+              value={textEditorDraft}
+              onChangeText={(value) => {
+                setTextEditorDraft(value);
+                if (textEditor?.kind === 'task') {
+                  setTaskDraft(value);
+                  setFormError('');
+                } else if (textEditor?.kind === 'subtask') {
+                  setSubtaskDraft(textEditor.taskId, value);
+                }
+              }}
+              placeholder={textEditor?.kind === 'task' ? 'Task title' : 'Subtask title'}
+              placeholderTextColor={theme.colors.textSecondary}
+              returnKeyType="done"
+              onSubmitEditing={saveTextEditor}
+              autoFocus
+            />
+            {textEditor?.kind === 'task' && formError ? <Text style={styles.errorText}>{formError}</Text> : null}
+            <View style={styles.taskEditActions}>
+              <Pressable style={styles.taskEditCancel} onPress={() => setTextEditor(null)}>
+                <Text style={styles.taskEditCancelText}>Cancel</Text>
+              </Pressable>
+              <Pressable style={styles.taskEditSave} onPress={saveTextEditor}>
+                <Text style={styles.taskEditSaveText}>Save</Text>
+              </Pressable>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
       <Modal
         transparent
@@ -1542,9 +1586,24 @@ const baseStyles = StyleSheet.create({
   },
   taskEditBackdrop: {
     flex: 1,
-    justifyContent: 'center',
+    justifyContent: 'flex-end',
     padding: 20,
     backgroundColor: 'rgba(57, 83, 91, 0.48)',
+  },
+  textEditorBackdrop: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    padding: 16,
+    paddingBottom: 12,
+    backgroundColor: 'rgba(57, 83, 91, 0.48)',
+  },
+  textEditorPanel: {
+    gap: 12,
+    padding: 18,
+    borderRadius: theme.borderRadius.lg,
+    backgroundColor: theme.colors.cardBackground,
+    borderWidth: 1,
+    borderColor: theme.colors.border,
   },
   taskEditScroll: {
     flexGrow: 0,
@@ -1719,6 +1778,7 @@ const baseStyles = StyleSheet.create({
   },
   taskInput: {
     minHeight: 48,
+    justifyContent: 'center',
     borderRadius: 16,
     backgroundColor: '#F7FBFC',
     borderWidth: 1,
@@ -1726,6 +1786,14 @@ const baseStyles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     color: theme.colors.textPrimary,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+  taskInputText: {
+    color: theme.colors.textPrimary,
+    fontFamily: 'Nunito_600SemiBold',
+  },
+  taskInputPlaceholder: {
+    color: theme.colors.textSecondary,
     fontFamily: 'Nunito_600SemiBold',
   },
   milestoneRow: {
@@ -2035,14 +2103,6 @@ const baseStyles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 12,
     elevation: 1,
-  },
-  taskCardOverdue: {
-    backgroundColor: 'rgba(220, 38, 38, 0.08)',
-    borderColor: 'rgba(220, 38, 38, 0.28)',
-  },
-  taskCardComplete: {
-    backgroundColor: '#EFF8F4',
-    borderColor: '#CDE8DA',
   },
   taskTopRow: {
     flexDirection: 'row',
@@ -2357,6 +2417,8 @@ const baseStyles = StyleSheet.create({
   },
   subtaskInput: {
     flex: 1,
+    minHeight: 40,
+    justifyContent: 'center',
     borderRadius: 10,
     backgroundColor: theme.colors.cardBackground,
     borderWidth: 1,

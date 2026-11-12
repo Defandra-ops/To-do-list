@@ -1,6 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
@@ -53,28 +54,32 @@ const menuItems = [
     description: 'Create tasks and manage your routines',
     icon: 'checkbox-outline',
     route: '/(tabs)/planner',
-    color: theme.colors.primary,
+    iconBackground: '#3975E8',
+    iconColor: '#FFFFFF',
   },
   {
     title: 'Calendar',
     description: 'See deadlines and scheduled tasks',
     icon: 'calendar-outline',
     route: '/(tabs)/calendar',
-    color: '#E8F4F7',
+    iconBackground: '#22A79C',
+    iconColor: '#FFFFFF',
   },
   {
     title: 'Progress',
     description: 'Review completed and ongoing work',
     icon: 'stats-chart-outline',
     route: '/(tabs)/overview',
-    color: '#EAF5EF',
+    iconBackground: '#F2B84B',
+    iconColor: '#263447',
   },
   {
     title: 'People',
     description: 'Manage your local profiles',
     icon: 'people-outline',
     route: '/(tabs)/users',
-    color: '#FFF1EC',
+    iconBackground: '#E87979',
+    iconColor: '#FFFFFF',
   },
 ] as const;
 
@@ -318,11 +323,11 @@ export default function HomeScreen() {
                 pressed && styles.menuCardPressed,
               ]}
               onPress={() => openMenuItem(item.route)}>
-              <View style={[styles.menuIcon, { backgroundColor: item.color }]}>
+              <View style={[styles.menuIcon, { backgroundColor: item.iconBackground }]}>
                 <Ionicons
                   name={item.icon}
                   size={23}
-                  color={item.title === 'People' ? theme.colors.accent : theme.colors.buttonDark}
+                  color={item.iconColor}
                 />
               </View>
               <Text style={styles.menuTitle}>{item.title}</Text>
@@ -337,33 +342,37 @@ export default function HomeScreen() {
           ))}
         </View>
 
-        <View style={styles.progressCard}>
+        <LinearGradient
+          colors={[theme.colors.primarySoft, theme.colors.primaryGradientEnd]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={styles.progressCard}>
           <View style={styles.progressHeading}>
             <View>
-              <Text style={styles.progressEyebrow}>YOUR PROGRESS</Text>
-              <Text style={styles.progressTitle}>Keep it going</Text>
+              <Text style={[styles.progressEyebrow, { color: theme.colors.primarySoftForeground }]}>YOUR PROGRESS</Text>
+              <Text style={[styles.progressTitle, { color: theme.colors.primarySoftForeground }]}>Keep it going</Text>
             </View>
-            <Ionicons name="trending-up-outline" size={24} color={theme.colors.buttonDark} />
+            <Ionicons name="trending-up-outline" size={24} color={theme.colors.primarySoftForeground} />
           </View>
           <View style={styles.statsRow}>
             <View style={styles.stat}>
-              <Text style={styles.statNumber}>{userTasks.length}</Text>
-              <Text style={styles.statLabel}>Total tasks</Text>
+              <Text style={[styles.statNumber, { color: theme.colors.primarySoftForeground }]}>{userTasks.length}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.primarySoftForeground }]}>Total tasks</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.stat}>
-              <Text style={styles.statNumber}>{completedTasks}</Text>
-              <Text style={styles.statLabel}>Completed</Text>
+              <Text style={[styles.statNumber, { color: theme.colors.primarySoftForeground }]}>{completedTasks}</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.primarySoftForeground }]}>Completed</Text>
             </View>
             <View style={styles.statDivider} />
             <View style={styles.stat}>
-              <Text style={[styles.statNumber, overdueTasks > 0 && styles.overdueNumber]}>
+              <Text style={[styles.statNumber, { color: overdueTasks > 0 ? theme.colors.accent : theme.colors.primarySoftForeground }]}>
                 {overdueTasks}
               </Text>
-              <Text style={styles.statLabel}>Overdue</Text>
+              <Text style={[styles.statLabel, { color: theme.colors.primarySoftForeground }]}>Overdue</Text>
             </View>
           </View>
-        </View>
+        </LinearGradient>
 
         <View style={styles.featureCards}>
           <Pressable
@@ -372,8 +381,8 @@ export default function HomeScreen() {
             style={({ pressed }) => [styles.featureCard, pressed && styles.menuCardPressed]}
             onPress={() => router.push('/(tabs)/notes' as never)}>
             <View style={styles.featureCardTop}>
-              <View style={[styles.menuIcon, styles.notesIcon]}>
-                <Ionicons name="document-text-outline" size={22} color={theme.colors.buttonDark} />
+              <View style={[styles.menuIcon, { backgroundColor: '#8065D8' }]}>
+                <Ionicons name="document-text-outline" size={22} color="#FFFFFF" />
               </View>
               <Ionicons name="arrow-forward" size={17} color={theme.colors.buttonDark} />
             </View>
@@ -387,8 +396,8 @@ export default function HomeScreen() {
             style={({ pressed }) => [styles.featureCard, pressed && styles.menuCardPressed]}
             onPress={openApplicationTracker}>
             <View style={styles.featureCardTop}>
-              <View style={[styles.menuIcon, styles.careerIcon]}>
-                <Ionicons name="briefcase-outline" size={22} color={theme.colors.buttonDark} />
+              <View style={[styles.menuIcon, { backgroundColor: '#E38A45' }]}>
+                <Ionicons name="briefcase-outline" size={22} color="#263447" />
               </View>
               <Ionicons name="arrow-forward" size={17} color={theme.colors.buttonDark} />
             </View>
@@ -404,8 +413,8 @@ export default function HomeScreen() {
             style={({ pressed }) => [styles.featureCard, pressed && styles.menuCardPressed]}
             onPress={() => router.push('/(tabs)/documents' as never)}>
             <View style={styles.featureCardTop}>
-              <View style={[styles.menuIcon, styles.documentsIcon]}>
-                <Ionicons name="scan-outline" size={22} color={theme.colors.buttonDark} />
+              <View style={[styles.menuIcon, { backgroundColor: '#50A6BB' }]}>
+                <Ionicons name="scan-outline" size={22} color="#18323D" />
               </View>
               <Ionicons name="arrow-forward" size={17} color={theme.colors.buttonDark} />
             </View>
@@ -802,9 +811,6 @@ const baseStyles = StyleSheet.create({
     fontSize: 21,
     fontFamily: 'Nunito_800ExtraBold',
   },
-  overdueNumber: {
-    color: theme.colors.accent,
-  },
   statLabel: {
     marginTop: 2,
     color: theme.colors.buttonDark,
@@ -841,15 +847,6 @@ const baseStyles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
     justifyContent: 'space-between',
-  },
-  notesIcon: {
-    backgroundColor: '#E8F4F7',
-  },
-  careerIcon: {
-    backgroundColor: '#EAF5EF',
-  },
-  documentsIcon: {
-    backgroundColor: '#FFF6E7',
   },
   featureCardTitle: {
     marginTop: 12,

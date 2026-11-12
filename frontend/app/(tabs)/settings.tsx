@@ -22,6 +22,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { LocalizedText as Text } from '@/components/LocalizedText';
+import { ColorWheelPicker } from '@/components/ColorWheelPicker';
 import {
   useAppSettings,
   type AppLanguage,
@@ -120,6 +121,7 @@ export default function SettingsScreen() {
   const [legalPage, setLegalPage] = useState<'privacy' | 'terms' | null>(null);
   const [feedbackVisible, setFeedbackVisible] = useState(false);
   const [feedbackDraft, setFeedbackDraft] = useState('');
+  const [colorTarget, setColorTarget] = useState<'accent' | 'background'>('accent');
   const text = copy[language];
   const preference = <K extends AppPreferenceKey>(key: K, value: AppPreferences[K]) => {
     setPreferenceError('');
@@ -127,6 +129,22 @@ export default function SettingsScreen() {
       console.error(`Failed to save app preference ${key}:`, error);
       setPreferenceError('Could not save this preference. Please try again.');
     });
+  };
+
+  const saveThemeColor = async (color: string) => {
+    setPreferenceError('');
+    try {
+      const colorKey = colorTarget === 'accent' ? 'customAccentColor' : 'customBackgroundColor';
+      const recentThemeColors = [
+        color.toUpperCase(),
+        ...preferences.recentThemeColors.filter((recentColor) => recentColor.toUpperCase() !== color.toUpperCase()),
+      ].slice(0, 8);
+      await setPreference(colorKey, color.toUpperCase());
+      await setPreference('recentThemeColors', recentThemeColors);
+    } catch (error) {
+      console.error('Failed to save theme color:', error);
+      setPreferenceError('Could not save this preference. Please try again.');
+    }
   };
 
   const openTimePicker = (key: 'defaultDueTime' | 'dailyDigestTime') => setTimePickerTarget(key);
@@ -384,24 +402,53 @@ export default function SettingsScreen() {
             })}
           </View>
           {appearanceSaveError ? <Text style={styles.error}>{appearanceSaveError}</Text> : null}
-          <Text style={styles.description}>Accent color</Text>
+          <Text style={styles.description}>Theme color</Text>
           <View style={styles.choiceRow}>
             {([
-              ['blue', '#72C9E4'],
-              ['purple', '#A78BFA'],
-              ['green', '#65B98A'],
-              ['orange', '#F2A65A'],
-            ] as const).map(([color, hex]) => (
+              ['accent', 'Accent'],
+              ['background', 'Background'],
+            ] as const).map(([target, label]) => (
               <Pressable
-                key={color}
+                key={target}
                 accessibilityRole="radio"
-                accessibilityState={{ checked: preferences.accentColor === color }}
-                onPress={() => preference('accentColor', color)}
-                style={[styles.colorChoice, { backgroundColor: hex }, preferences.accentColor === color && styles.colorChoiceSelected]}>
-                {preferences.accentColor === color ? <Ionicons name="checkmark" size={18} color="#FFFFFF" /> : null}
+                accessibilityState={{ checked: colorTarget === target }}
+                onPress={() => setColorTarget(target)}
+                style={[styles.choiceChip, colorTarget === target && styles.choiceChipSelected]}>
+                <Text style={[styles.choiceChipText, colorTarget === target && styles.choiceChipTextSelected]}>{label}</Text>
               </Pressable>
             ))}
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => preference(colorTarget === 'accent' ? 'customAccentColor' : 'customBackgroundColor', null)}
+              style={styles.colorResetButton}>
+              <Text style={styles.choiceChipText}>Reset</Text>
+            </Pressable>
           </View>
+          <ColorWheelPicker
+            key={colorTarget}
+            target={colorTarget}
+            isDark={theme.isDark}
+            value={colorTarget === 'accent'
+              ? preferences.customAccentColor ?? theme.colors.primary
+              : theme.colors.background}
+            onCommit={(color) => void saveThemeColor(color)}
+          />
+          <Text style={styles.description}>Recent colors</Text>
+          {preferences.recentThemeColors.length > 0 ? (
+            <View style={styles.recentColorsRow}>
+              {preferences.recentThemeColors.map((color, index) => (
+                <Pressable
+                  key={`${color}-${index}`}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Use recent color ${color}`}
+                  onPress={() => void saveThemeColor(color)}
+                  style={[styles.recentColorChoice, { backgroundColor: color }]}
+                />
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.description}>Colors you use will appear here.</Text>
+          )}
           <Text style={styles.description}>Default opening page</Text>
           <View style={styles.choiceRow}>
             {([
@@ -917,16 +964,31 @@ const baseStyles = StyleSheet.create({
   choiceChipTextSelected: {
     color: lightTheme.colors.buttonDark,
   },
-  colorChoice: {
-    width: 34,
-    height: 34,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: 17,
+  recentColorsRow: {
+    marginTop: 10,
+    marginBottom: 8,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
   },
-  colorChoiceSelected: {
-    borderWidth: 3,
-    borderColor: lightTheme.colors.buttonDark,
+  recentColorChoice: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    shadowColor: '#000000',
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  colorResetButton: {
+    minHeight: 38,
+    justifyContent: 'center',
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: lightTheme.colors.border,
+    borderRadius: 18,
   },
   preferenceBlock: {
     marginTop: 12,

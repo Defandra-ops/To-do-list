@@ -21,13 +21,22 @@ const darkColorMap: Record<string, string> = {
 
 const normalize = (color: string) => color.toUpperCase();
 
-function mapColor(value: string, property: string, isDark: boolean, primary: string) {
+function mapColor(value: string, property: string, isDark: boolean, colors: ReturnType<typeof useAppTheme>['colors']) {
   const normalized = normalize(value);
   if (property === 'shadowColor') return value;
+  if ([theme.colors.background, darkTheme.colors.background].some((color) => normalize(color) === normalized)) {
+    return colors.background;
+  }
+  if ([theme.colors.cardBackground, darkTheme.colors.cardBackground].some((color) => normalize(color) === normalized)) {
+    return colors.cardBackground;
+  }
+  if ([theme.colors.border, darkTheme.colors.border].some((color) => normalize(color) === normalized)) {
+    return colors.border;
+  }
   if (normalized === normalize(theme.colors.primary)) {
     return isDark && property !== 'backgroundColor' && property !== 'borderColor'
       ? darkTheme.colors.buttonDark
-      : primary;
+      : colors.primary;
   }
   if (!isDark) return value;
   if (normalized === '#FFFFFF' && property === 'color') return '#FFFFFF';
@@ -68,16 +77,16 @@ function mapColor(value: string, property: string, isDark: boolean, primary: str
   return value;
 }
 
-function transformStyles(value: unknown, isDark: boolean, primary: string): unknown {
-  if (Array.isArray(value)) return value.map((item) => transformStyles(item, isDark, primary));
+function transformStyles(value: unknown, isDark: boolean, colors: ReturnType<typeof useAppTheme>['colors']): unknown {
+  if (Array.isArray(value)) return value.map((item) => transformStyles(item, isDark, colors));
   if (!value || typeof value !== 'object') return value;
 
   return Object.fromEntries(
     Object.entries(value).map(([key, item]) => [
       key,
       typeof item === 'string' && key.toLowerCase().includes('color')
-        ? mapColor(item, key, isDark, primary)
-        : transformStyles(item, isDark, primary),
+        ? mapColor(item, key, isDark, colors)
+        : transformStyles(item, isDark, colors),
     ])
   );
 }
@@ -85,7 +94,7 @@ function transformStyles(value: unknown, isDark: boolean, primary: string): unkn
 export function useThemedStyles<T extends StyleSheet.NamedStyles<T>>(styles: T): T {
   const { isDark, colors } = useAppTheme();
   return useMemo(
-    () => StyleSheet.create(transformStyles(styles, isDark, colors.primary) as T),
-    [colors.primary, isDark, styles]
+    () => StyleSheet.create(transformStyles(styles, isDark, colors) as T),
+    [colors, isDark, styles]
   );
 }
