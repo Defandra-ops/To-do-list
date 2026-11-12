@@ -3,12 +3,12 @@
 ## Todo Planner
 
 **Status:** Draft based on current implementation  
-**Last reviewed:** 2026-11-05
+**Last reviewed:** 2026-11-10
 **Platforms:** Android (primary), web (partial); iOS project support is present but some features are Android-only.
 
 ## 1. Product Summary
 
-Todo Planner is a personal planning app for task and routine management, notes, and job-application tracking. Users can create and edit tasks with date ranges, assign people, add and edit subtasks, track progress, and receive local reminders. Notes and job applications are managed from Home. Daily tasks can be associated with an installed Android app, such as Duolingo, or with an offline habit, such as jogging. App state is saved on-device and can optionally synchronize through a Docker-hosted backend and PostgreSQL.
+Todo Planner is a personal planning app for task and routine management, notes, and job-application tracking. Users can create and edit tasks with date ranges, assign people, add and edit subtasks, track progress, and receive configurable local reminders. Settings cover appearance, task behavior, backups, synchronization, and device App Lock. A three-step animated welcome guide appears at each cold launch before opening the user's configured default page. App state is saved on-device and can optionally synchronize through a Docker-hosted backend and PostgreSQL.
 
 ## 2. Problem and Goals
 
@@ -24,6 +24,9 @@ Users need a lightweight place to plan larger tasks, break them into smaller act
 - Support editable user profiles with name, age, photo, and hobbies/daily routines.
 - Keep task data available offline on each device.
 - Optionally synchronize app state through the backend and PostgreSQL.
+- Customize appearance, reminders, task behavior, launch destination, and calendar conventions.
+- Export and restore a versioned JSON backup of planner data.
+- Protect the app on supported mobile devices with a device PIN or biometrics.
 - Build an Android APK that runs without Expo Go.
 
 ### Out of Scope
@@ -44,10 +47,11 @@ Users need a lightweight place to plan larger tasks, break them into smaller act
 
 ### App launch and home menu
 
-1. Show the welcome screen whenever the app is opened from a cold start.
-2. Tapping anywhere on the welcome screen opens the Home menu.
-3. Home provides navigation to Tasks, Calendar, Progress, and People, a task summary, Notes access beneath the summary, and a job-application tracker.
-4. Open Tasks to create or manage tasks; do not show the task-creation form immediately after welcome.
+1. Show a three-step animated welcome guide whenever the app is opened from a cold start.
+2. The user moves through the guide with Back and Continue; Get started opens the configured default page.
+3. Default destination options are Home, Tasks, Calendar, and Progress. Home is the initial default.
+4. Home provides navigation to Tasks, Calendar, Progress, and People, a task summary, Notes access beneath the summary, and a job-application tracker.
+5. If App Lock is enabled, require device PIN or biometric verification before showing app content.
 
 ### Create a task
 
@@ -83,14 +87,14 @@ The separate Calendar route remains in the project for notification navigation b
 
 ### FR-01: Welcome screen
 
-- Display a full-screen welcome screen on every cold app launch.
-- Any screen tap starts the app.
-- Do not persist a completed-welcome flag; returning to the app from a cold start shows the welcome screen again.
+- Display a full-screen, animated, three-step welcome guide on every cold app launch.
+- Provide Back and Continue controls and a Get started action on the final step.
+- Route Get started to the configured default destination (Home, Tasks, Calendar, or Progress).
 - Keep user/task persistence independent from the welcome-screen behavior.
 
 ### FR-09: Home dashboard
 
-- After the welcome screen, open a Home dashboard rather than the task-creation form.
+- Use Home as the default destination; after the welcome guide, open the destination selected in Settings rather than always showing the task-creation form.
 - Provide clear menu entries for My tasks, Calendar, Progress, and People.
 - Show total, completed, and overdue task counts on Home.
 - Show a Notes entry below the Progress summary and People navigation; Notes must not occupy a bottom tab.
@@ -99,12 +103,13 @@ The separate Calendar route remains in the project for notification navigation b
 
 ### FR-02: User profiles
 
-- Create, activate, and edit a local profile with a name, optional age, optional gallery photo, and optional hobbies/daily routine description.
+- Create, activate, and edit a local profile with a name, optional email, optional age, optional gallery photo, and optional hobbies/daily routine description.
 - Save profile changes in local app storage and include profile fields in the existing app-state synchronization payload.
 - Selecting an existing profile changes the active user and updates the Planner, Calendar, Home, and Overview to that user's assigned tasks and progress.
 - Store creator, deadline editor, assignees, and task participants as user IDs.
 - Profile photos are selected from the device gallery and stored in app-private device storage; the photo URI and image file are excluded from backend synchronization.
 - Do not represent this feature as secure authentication.
+- The optional email is profile metadata only; it is not used to sign in or verify identity.
 
 ### FR-03: Task creation and management
 
@@ -115,6 +120,7 @@ The separate Calendar route remains in the project for notification navigation b
 - A task's shared completed status is true only when every assignee has completed it.
 - Daily task completion and subtask progress reset independently per user each local day.
 - A task with a deadline in the past and incomplete status is marked overdue/failed in relevant screens.
+- Keep completed non-daily tasks and tasks past their deadline out of the active task list and show them in the task History view; daily routines remain active until their schedule ends.
 
 ### FR-04: Daily routines and app association
 
@@ -140,7 +146,9 @@ The separate Calendar route remains in the project for notification navigation b
 - On Android, use a high-importance task-reminder notification channel.
 - For an active daily task, schedule a repeating local reminder one hour before its configured daily time; include the task title and app label when present.
 - For an incomplete non-daily task with a future deadline, schedule reminders at 09:00 local time on the day before and the deadline day when those times are still in the future.
-- When incomplete non-daily tasks exist, schedule a daily 09:00 reminder summarizing how many remain.
+- Use the configured default reminder time for deadline-day reminders.
+- When enabled, schedule a configurable daily digest summarizing unfinished tasks at the selected local time.
+- Respect the master notification switch, notification sound, and vibration settings. Android notification-channel behavior remains subject to device-level notification settings.
 - Rebuild the native Android development/release app after changing native notification or installed-app modules. Expo Go does not provide the required Android remote-push support; local/native reminder testing uses the development build.
 
 ### FR-07: Overview and progress
@@ -150,6 +158,7 @@ The separate Calendar route remains in the project for notification navigation b
 - Derive counts from persisted current records; removing a note or application removes it from the corresponding count. This is not an immutable event/audit history.
 - Show total, completed, failed/overdue, and ongoing task counts in an animated task progress ring.
 - Show a subtask progress chart with Daily, Weekly, and Monthly view controls.
+- Show a line chart of monthly job applications for the active profile over the latest six months, based on application dates.
 - Show separate records for completed and failed tasks, including creator, assignees, and deadline.
 - Do not embed the calendar in Overview.
 
@@ -158,9 +167,34 @@ The separate Calendar route remains in the project for notification navigation b
 - Persist user profiles, active user ID, tasks, per-user task/subtask progress, app associations, and subtasks on-device in AsyncStorage.
 - When the backend is reachable, fetch and save the complete app state through `/state`.
 - Include notes and job applications in the complete local and synchronized app state.
+- Keep Settings preferences in local app storage. Store a configured App Lock PIN only in device secure storage; do not include it in backups or backend synchronization.
 - Poll the backend for state changes approximately every 2.5 seconds and save local changes after a short debounce.
 - If the backend is unavailable, retain the local state and keep the app usable offline.
 - The backend stores the current app state as one JSONB payload in the singleton `app_state` row. This is shared state, not per-device or per-user isolated server storage.
+
+### FR-13: Preferences and task behavior
+
+- Support System, Light, and Dark appearance, plus selectable blue, purple, green, or orange accent colors.
+- Let users choose the cold-launch destination (Home, Tasks, Calendar, or Progress), 12/24-hour time display, and Sunday/Monday calendar week start.
+- Provide a master reminder switch, configurable default reminder time, daily digest enable/time, default notification sound, and vibration toggle.
+- Let users choose whether newly created tasks appear at the top or bottom, hide completed tasks in Planner and Calendar, enable completion haptics, and require confirmation before deleting tasks.
+- Persist settings locally and apply each setting to its relevant screen or notification behavior.
+
+### FR-14: Backup, restore, and synchronization controls
+
+- Export a versioned JSON backup containing profiles (excluding device-local photo URIs), tasks, progress, notes, and job applications.
+- Restore only recognized backup versions and validate the backup envelope before replacing current app data; ask for explicit confirmation.
+- Show synchronization state and offer a manual Sync Now action.
+- Clearly disclose that the current backend contains one shared app state; manual sync and clearing data can affect other connected devices.
+- Clear planner app data only after explicit confirmation. This does not clear unrelated app preferences or the device-secure App Lock PIN.
+
+### FR-15: App Lock and support information
+
+- On supported Android/iOS builds, allow App Lock using a 4–6 digit PIN stored in device secure storage or enrolled device biometrics.
+- Lock at cold start and when returning from the background; keep protected content behind the lock screen until successfully verified.
+- App Lock protects this device only and is not server-side authentication or account isolation. Do not expose the PIN in backup, logs, or synchronized state.
+- Show app version and in-app privacy/terms information, and allow users to compose and share feedback or bug reports using an available device share target.
+- The app does not claim to delete an authenticated account because authenticated accounts do not exist.
 
 ### FR-10: Per-user task progress
 
@@ -205,8 +239,14 @@ The separate Calendar route remains in the project for notification navigation b
 
 ### User
 
-- `id`, `name`, optional `age`, `photoUri`, `dailyFocus`
+- `id`, `name`, optional `email`, optional `age`, `photoUri`, `dailyFocus`
 - The profile photo URI points to an image copied into app-private device storage; photo bytes are not part of the backend JSON state.
+- The email is local profile metadata (included in the existing shared app-state synchronization payload), not an authentication identifier.
+
+### App preferences
+
+- Locally stored preferences include theme mode, accent color, default view, time format, week start, reminder/digest configuration, task list behavior, completion feedback, deletion confirmation, and App Lock method/state.
+- App Lock PIN is stored separately in the platform secure store and is excluded from app backups and server synchronization.
 
 ### Per-user task progress
 
@@ -244,11 +284,19 @@ The separate Calendar route remains in the project for notification navigation b
 - **Persistence:** app state survives normal app restarts through AsyncStorage.
 - **Platform safety:** installed-app discovery is restricted to Android launcher-visible apps and must not request broad access to all installed packages.
 - **Notification behavior:** permissions may be denied; the app must continue to work, with visual task/deadline status still available.
+- **Backup safety:** import must recognize the supported format/version and confirm before replacing data; never import the App Lock PIN or device-local photo paths.
+- **App Lock:** use device secure storage and device biometric APIs; never present local profiles or App Lock as account authentication.
 - **Distribution:** a sideloaded APK needs no Expo Go or Metro at runtime. A new APK is required after native module changes.
 
 ## 9. Acceptance Criteria
 
-- Every cold app launch shows the welcome screen; tapping it opens Home.
+- Every cold app launch shows the animated three-step guide; Get started opens the selected default page.
+- If App Lock is enabled, app content remains covered until PIN or biometric verification succeeds at cold start and after returning from the background.
+- Settings persist theme mode, accent color, default view, time format, and week-start choices and apply them to the UI.
+- Reminder settings control the master notification switch, default reminder time, daily digest, sound, and vibration on supported mobile platforms.
+- Task behavior settings control new-task position, completed-task visibility, completion haptics, and task-delete confirmation.
+- Users can export and restore a versioned JSON backup, see sync status, trigger Sync Now, and clear planner data after a warning/confirmation.
+- Settings shows the app version, privacy/terms information, a feedback share action, and a disclosure that profiles/email are not authenticated accounts.
 - Home opens with feature navigation and task counts, without displaying the task-creation form.
 - My tasks opens the existing task planner; Calendar, Progress, and People menu entries open their respective features.
 - Notes is accessible from Home below the Progress summary and People menu entry and is absent from the bottom tab bar.
@@ -276,6 +324,9 @@ The separate Calendar route remains in the project for notification navigation b
 - The installed-app picker uses a generic device icon; it does not load the app's actual launcher icon.
 - User profiles are names stored in shared app state, not authenticated accounts or isolated workspaces.
 - PostgreSQL synchronization stores one whole state payload. Concurrent edits from multiple devices can overwrite each other; there is no record-level merge/conflict resolution.
+- The backend is a shared singleton state, so Sync Now and Clear app data can affect other connected devices; it is not safe for unrelated users without server-side account isolation.
+- Feedback is shared through the device share sheet; the app has no configured support endpoint or developer email address.
+- Privacy and terms are in-app informational text and have not undergone legal review.
 - The backend uses permissive CORS and default credentials in local Docker configuration; production security and secrets management are not configured.
 - Release APK signing uses the debug keystore and is not suitable for Play Store publishing.
 
@@ -291,20 +342,18 @@ These are proposed follow-up items, not part of the current implementation.
 
 ### P2 — Improve reliability and personal data handling
 
-- Add export/import for a local backup of tasks and profiles.
-- Add notification settings and an in-app explanation when Android notification permission is denied.
+- Add conflict-safe per-account synchronization before supporting concurrent devices or unrelated users.
+- Add a real support endpoint and legally reviewed privacy/terms pages before public distribution.
 - Load actual installed-app icons in the daily routine picker.
-- Add visible sync status and conflict-safe synchronization before supporting concurrent devices.
 
 ### P3 — Prepare for wider release
 
 - Add Indonesian and English localization and verify layouts with larger accessibility font sizes.
-- Add onboarding help for recurring routines, assignments, and reminders.
 - Configure a private production signing key, app identity, privacy notice, and Play Store release workflow.
 
 ## 12. Current Profile and Progress Feature
 
-- The People screen creates and edits local profiles, including optional age, gallery photo, and daily-focus text.
+- The People screen creates and edits local profiles, including optional email (not sign-in), age, gallery photo, and daily-focus text.
 - Gallery photos are copied to app-private storage so the profile picture remains available after the picker cache is cleared.
 - Tasks and subtasks retain independent completion state for each assignee. Planner, Calendar, Home counts, and Overview are scoped to the active profile.
 - Profile metadata and per-user progress are persisted in the existing app-state record. Gallery image files remain device-local and are not synchronized as image uploads.

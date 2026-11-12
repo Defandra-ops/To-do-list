@@ -21,13 +21,15 @@ const darkColorMap: Record<string, string> = {
 
 const normalize = (color: string) => color.toUpperCase();
 
-function mapColor(value: string, property: string, isDark: boolean) {
+function mapColor(value: string, property: string, isDark: boolean, primary: string) {
   const normalized = normalize(value);
   if (property === 'shadowColor') return value;
-  if (!isDark) return value;
   if (normalized === normalize(theme.colors.primary)) {
-    return property === 'backgroundColor' ? darkTheme.colors.primary : darkTheme.colors.buttonDark;
+    return isDark && property !== 'backgroundColor' && property !== 'borderColor'
+      ? darkTheme.colors.buttonDark
+      : primary;
   }
+  if (!isDark) return value;
   if (normalized === '#FFFFFF' && property === 'color') return '#FFFFFF';
   const paletteMap: Record<string, string> = {
     [theme.colors.accent]: darkTheme.colors.accent,
@@ -66,24 +68,24 @@ function mapColor(value: string, property: string, isDark: boolean) {
   return value;
 }
 
-function transformStyles(value: unknown, isDark: boolean): unknown {
-  if (Array.isArray(value)) return value.map((item) => transformStyles(item, isDark));
+function transformStyles(value: unknown, isDark: boolean, primary: string): unknown {
+  if (Array.isArray(value)) return value.map((item) => transformStyles(item, isDark, primary));
   if (!value || typeof value !== 'object') return value;
 
   return Object.fromEntries(
     Object.entries(value).map(([key, item]) => [
       key,
       typeof item === 'string' && key.toLowerCase().includes('color')
-        ? mapColor(item, key, isDark)
-        : transformStyles(item, isDark),
+        ? mapColor(item, key, isDark, primary)
+        : transformStyles(item, isDark, primary),
     ])
   );
 }
 
 export function useThemedStyles<T extends StyleSheet.NamedStyles<T>>(styles: T): T {
-  const { isDark } = useAppTheme();
+  const { isDark, colors } = useAppTheme();
   return useMemo(
-    () => StyleSheet.create(transformStyles(styles, isDark) as T),
-    [isDark, styles]
+    () => StyleSheet.create(transformStyles(styles, isDark, colors.primary) as T),
+    [colors.primary, isDark, styles]
   );
 }

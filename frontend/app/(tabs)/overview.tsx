@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Animated, Easing, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import Svg, { Circle, G, Rect } from 'react-native-svg';
+import Svg, { Circle, G, Line, Path, Text as SvgText } from 'react-native-svg';
 
 import { getUserTaskProgress, Task, useTodoStore } from '@/components/TodoStore';
 import { LocalizedText as Text } from '@/components/LocalizedText';
@@ -41,6 +41,33 @@ export default function OverviewRecordScreen() {
     }),
     [userApplications]
   );
+  const applicationTrend = useMemo(() => {
+    const monthlyCounts: Record<string, number> = {};
+    userApplications.forEach((application) => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(application.appliedDate)) return;
+      const month = application.appliedDate.slice(0, 7);
+      monthlyCounts[month] = (monthlyCounts[month] ?? 0) + 1;
+    });
+    const today = new Date();
+    return Array.from({ length: 6 }, (_, index) => {
+      const monthDate = new Date(today.getFullYear(), today.getMonth() - 5 + index, 1);
+      const key = `${monthDate.getFullYear()}-${String(monthDate.getMonth() + 1).padStart(2, '0')}`;
+      return {
+        key,
+        label: monthDate.toLocaleDateString(undefined, { month: 'short' }),
+        count: monthlyCounts[key] ?? 0,
+      };
+    });
+  }, [userApplications]);
+  const applicationStatusData = [
+    { label: 'Applied', count: applicationStatusCounts.applied, color: theme.colors.primary },
+    { label: 'Screening', count: applicationStatusCounts.screening, color: '#73A7C0' },
+    { label: 'Interview', count: applicationStatusCounts.interview, color: theme.colors.warning },
+    { label: 'Offer', count: applicationStatusCounts.offer, color: theme.colors.success },
+    { label: 'Rejected', count: applicationStatusCounts.rejected, color: theme.colors.accent },
+    { label: 'Cancelled', count: applicationStatusCounts.cancelled, color: theme.colors.textMuted },
+  ] as const;
+  const maxApplicationStatusCount = Math.max(...applicationStatusData.map(({ count }) => count), 1);
   const tasks = useMemo(
     () => allTasks.filter(
       (task) =>
@@ -87,8 +114,14 @@ export default function OverviewRecordScreen() {
     if (mode === 'daily') return `${year}-${month}-${day}`;
     if (mode === 'weekly') {
       const date = new Date(`${year}-${month}-${day}T00:00:00`);
-      const week = Math.ceil((date.getDate() - date.getDay() + 1) / 7);
-      return `${year}-W${String(week).padStart(2, '0')}`;
+      const weekday = date.getDay() || 7;
+      date.setDate(date.getDate() + 4 - weekday);
+      const weekYear = date.getFullYear();
+      const firstThursday = new Date(weekYear, 0, 4);
+      const firstWeekday = firstThursday.getDay() || 7;
+      firstThursday.setDate(firstThursday.getDate() + 4 - firstWeekday);
+      const week = Math.round((date.getTime() - firstThursday.getTime()) / 604800000) + 1;
+      return `${weekYear}-W${String(week).padStart(2, '0')}`;
     }
     return `${year}-${month}`;
   };
@@ -162,6 +195,29 @@ export default function OverviewRecordScreen() {
   const displayOngoing = Math.round(ongoingTasks.length * displayRatio);
   const displaySubtaskDone = Math.round(subtaskStats.completed.length * displayRatio);
   const displaySubtaskOngoing = Math.round(subtaskStats.ongoing.length * displayRatio);
+  const chartLeft = 32;
+  const chartRight = 340;
+  const chartTop = 18;
+  const chartBottom = 140;
+  const subtaskChartMax = Math.max(
+    1,
+    ...subtasksByPeriod.flatMap((period) => [period.done, period.ongoing])
+  );
+  const applicationChartMax = Math.max(1, ...applicationTrend.map((month) => month.count));
+  const applicationLinePoints = applicationTrend.map((month, index) => ({
+    x: chartLeft + (index * (chartRight - chartLeft)) / (applicationTrend.length - 1),
+    y: chartBottom - (month.count / applicationChartMax) * (chartBottom - chartTop),
+  }));
+  const getSubtaskLinePoints = (key: 'done' | 'ongoing') => subtasksByPeriod.map((period, index) => ({
+    x: subtasksByPeriod.length === 1
+      ? (chartLeft + chartRight) / 2
+      : chartLeft + (index * (chartRight - chartLeft)) / (subtasksByPeriod.length - 1),
+    y: chartBottom - (period[key] / subtaskChartMax) * (chartBottom - chartTop) * displayRatio,
+  }));
+  const doneLinePoints = getSubtaskLinePoints('done');
+  const ongoingLinePoints = getSubtaskLinePoints('ongoing');
+  const getLinePath = (points: { x: number; y: number }[]) =>
+    points.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
 
   const getUserNames = (ids: string[]) => {
     const names = ids.map((id) => userById[id]).filter((name): name is string => Boolean(name));
@@ -187,6 +243,38 @@ export default function OverviewRecordScreen() {
       <ScrollView contentContainerStyle={styles.content}>
         <Text style={styles.title}>{activeUserName}&apos;s Overview</Text>
         <Text style={styles.subtitle}>See your activity across tasks, notes, and job applications.</Text>
+
+        <Text style={styles.chartTitle}>Application activity</Text>
+        <View style={styles.diagramCard}>
+          {applicationTrend.some((month) => month.count > 0) ? (
+            <View style={styles.lineChartContainer}>
+              <Svg width="100%" height={200} viewBox="0 0 360 200">
+                {[0, 1, 2, 3].map((step) => {
+                  const y = chartTop + ((chartBottom - chartTop) * step) / 3;
+                  const value = Math.round((applicationChartMax * (3 - step)) / 3);
+                  return (
+                    <G key={step}>
+                      <Line x1={chartLeft} y1={y} x2={chartRight} y2={y} stroke={theme.colors.border} strokeDasharray="4 4" />
+                      <SvgText x={24} y={y + 3} textAnchor="end" fontSize={9} fill={theme.colors.textSecondary}>{value}</SvgText>
+                    </G>
+                  );
+                })}
+                <Path d={getLinePath(applicationLinePoints)} fill="none" stroke={theme.colors.primary} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                {applicationLinePoints.map((point, index) => (
+                  <Circle key={applicationTrend[index].key} cx={point.x} cy={point.y} r={4} fill={theme.colors.primary} />
+                ))}
+                {applicationTrend.map((month, index) => (
+                  <SvgText key={month.key} x={applicationLinePoints[index].x} y={166} textAnchor="middle" fontSize={9} fill={theme.colors.textSecondary}>
+                    {month.label}
+                  </SvgText>
+                ))}
+              </Svg>
+            </View>
+          ) : (
+            <Text style={styles.applicationSummaryEmpty}>No application dates to chart yet.</Text>
+          )}
+          <Text style={styles.lineLegendText}>Applications per month</Text>
+        </View>
 
         <Text style={styles.chartTitle}>Your activity</Text>
         <View style={styles.activityGrid}>
@@ -222,21 +310,22 @@ export default function OverviewRecordScreen() {
         </View>
 
         <View style={styles.applicationSummaryCard}>
-          <Text style={styles.sectionTitle}>Job application status</Text>
-          {([
-            ['Applied', applicationStatusCounts.applied, theme.colors.primary],
-            ['Screening', applicationStatusCounts.screening, '#73A7C0'],
-            ['Interview', applicationStatusCounts.interview, theme.colors.warning],
-            ['Offer', applicationStatusCounts.offer, theme.colors.success],
-            ['Rejected', applicationStatusCounts.rejected, theme.colors.accent],
-            ['Cancelled', applicationStatusCounts.cancelled, theme.colors.textMuted],
-          ] as const).map(([label, count, color]) => (
+          <Text style={styles.sectionTitle}>Job tracker overview</Text>
+          {applicationStatusData.map(({ label, count, color }) => (
             <View key={label} style={styles.applicationStatusRow}>
               <View style={styles.applicationStatusLabelWrap}>
                 <View style={[styles.applicationStatusDot, { backgroundColor: color }]} />
                 <Text style={styles.applicationStatusLabel}>{label}</Text>
+                <Text style={styles.applicationStatusCount}>{count}</Text>
               </View>
-              <Text style={styles.applicationStatusCount}>{count}</Text>
+              <View style={styles.applicationStatusBarTrack}>
+                <View
+                  style={[
+                    styles.applicationStatusBar,
+                    { width: `${(count / maxApplicationStatusCount) * 100}%`, backgroundColor: color },
+                  ]}
+                />
+              </View>
             </View>
           ))}
           {userApplications.length === 0 ? (
@@ -269,9 +358,9 @@ export default function OverviewRecordScreen() {
 
         <Text style={styles.chartTitle}>Subtasks</Text>
         <Animated.View style={[styles.diagramCard, { opacity: progressAnim }]}>
-          <View style={styles.verticalChartWrap}>
-            <View style={styles.verticalChartHeader}>
-              <Text style={styles.barChartTitle}>{allSubtasksCount} Subtasks</Text>
+          <View style={styles.lineChartWrap}>
+            <View style={styles.lineChartHeader}>
+              <Text style={styles.lineChartTitle}>{allSubtasksCount} Subtasks</Text>
               <View style={styles.viewModeTabs}>
                 {(['daily', 'weekly', 'monthly'] as const).map((mode) => (
                   <Pressable key={mode} style={[styles.viewModeTab, subtaskViewMode === mode && styles.viewModeTabActive]} onPress={() => setSubtaskViewMode(mode)}>
@@ -283,29 +372,47 @@ export default function OverviewRecordScreen() {
             {subtasksByPeriod.length === 0 ? (
               <Text style={styles.emptyText}>No subtasks yet.</Text>
             ) : (
-              <View style={styles.verticalChartContainer}>
+              <View style={styles.lineChartContainer}>
                 <Svg width="100%" height={200} viewBox="0 0 360 200">
-                  {subtasksByPeriod.map((period, index) => {
-                    const total = period.done + period.ongoing;
-                    const maxHeight = 140;
-                    const barWidth = 24;
-                    const spacing = 360 / subtasksByPeriod.length;
-                    const x = index * spacing + spacing / 2 - barWidth / 2;
-                    const doneHeight = (period.done / Math.max(total, 1)) * maxHeight * displayRatio;
-                    const ongoingHeight = (period.ongoing / Math.max(total, 1)) * maxHeight * displayRatio;
+                  {[0, 1, 2, 3].map((step) => {
+                    const y = chartTop + ((chartBottom - chartTop) * step) / 3;
+                    const value = Math.round((subtaskChartMax * (3 - step)) / 3);
                     return (
-                      <G key={period.label}>
-                        <Rect x={x} y={maxHeight - doneHeight} width={barWidth} height={doneHeight} fill={theme.colors.success} rx={2} />
-                        <Rect x={x} y={maxHeight - doneHeight - ongoingHeight} width={barWidth} height={ongoingHeight} fill={theme.colors.primary} rx={2} />
+                      <G key={step}>
+                        <Line x1={chartLeft} y1={y} x2={chartRight} y2={y} stroke={theme.colors.border} strokeDasharray="4 4" />
+                        <SvgText x={24} y={y + 3} textAnchor="end" fontSize={9} fill={theme.colors.textSecondary}>{value}</SvgText>
                       </G>
+                    );
+                  })}
+                  {doneLinePoints.length > 0 ? (
+                    <>
+                      <Path d={getLinePath(doneLinePoints)} fill="none" stroke={theme.colors.success} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                      {doneLinePoints.map((point, index) => <Circle key={`done-${index}`} cx={point.x} cy={point.y} r={4} fill={theme.colors.success} />)}
+                    </>
+                  ) : null}
+                  {ongoingLinePoints.length > 0 ? (
+                    <>
+                      <Path d={getLinePath(ongoingLinePoints)} fill="none" stroke={theme.colors.primary} strokeWidth={3} strokeLinecap="round" strokeLinejoin="round" />
+                      {ongoingLinePoints.map((point, index) => <Circle key={`ongoing-${index}`} cx={point.x} cy={point.y} r={4} fill={theme.colors.primary} />)}
+                    </>
+                  ) : null}
+                  {subtasksByPeriod.map((period, index) => {
+                    const x = subtasksByPeriod.length === 1
+                      ? (chartLeft + chartRight) / 2
+                      : chartLeft + (index * (chartRight - chartLeft)) / (subtasksByPeriod.length - 1);
+                    const label = period.label === 'unknown' ? 'N/A' : period.label.slice(5);
+                    return (
+                      <SvgText key={period.label} x={x} y={166} textAnchor="middle" fontSize={9} fill={theme.colors.textSecondary}>
+                        {label}
+                      </SvgText>
                     );
                   })}
                 </Svg>
               </View>
             )}
-            <View style={styles.barLegendRow}>
-              <View style={styles.barLegendItem}><View style={[styles.barLegendDot, { backgroundColor: theme.colors.success }]} /><Text style={styles.barLegendText}>Done {displaySubtaskDone}</Text></View>
-              <View style={styles.barLegendItem}><View style={[styles.barLegendDot, { backgroundColor: theme.colors.primary }]} /><Text style={styles.barLegendText}>Ongoing {displaySubtaskOngoing}</Text></View>
+            <View style={styles.lineLegendRow}>
+              <View style={styles.lineLegendItem}><View style={[styles.lineLegendDot, { backgroundColor: theme.colors.success }]} /><Text style={styles.lineLegendText}>Done {displaySubtaskDone}</Text></View>
+              <View style={styles.lineLegendItem}><View style={[styles.lineLegendDot, { backgroundColor: theme.colors.primary }]} /><Text style={styles.lineLegendText}>Ongoing {displaySubtaskOngoing}</Text></View>
             </View>
           </View>
         </Animated.View>
@@ -370,16 +477,18 @@ const baseStyles = StyleSheet.create({
     borderColor: theme.colors.border,
   },
   applicationStatusRow: {
-    minHeight: 36,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
+    minHeight: 52,
+    flexDirection: 'column',
+    alignItems: 'stretch',
+    justifyContent: 'center',
+    paddingVertical: 8,
     borderBottomWidth: 1,
     borderBottomColor: theme.colors.border,
   },
   applicationStatusLabelWrap: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
     gap: 8,
   },
   applicationStatusDot: {
@@ -396,6 +505,17 @@ const baseStyles = StyleSheet.create({
     color: theme.colors.textPrimary,
     fontSize: 14,
     fontFamily: 'Nunito_800ExtraBold',
+  },
+  applicationStatusBarTrack: {
+    height: 7,
+    marginTop: 7,
+    overflow: 'hidden',
+    borderRadius: theme.borderRadius.full,
+    backgroundColor: theme.colors.border,
+  },
+  applicationStatusBar: {
+    height: '100%',
+    borderRadius: theme.borderRadius.full,
   },
   applicationSummaryEmpty: {
     marginTop: 10,
@@ -448,17 +568,17 @@ const baseStyles = StyleSheet.create({
   badgeFailed: { backgroundColor: '#F8DDD8' },
   recordBadgeText: { color: theme.colors.buttonDark, fontSize: 11, fontFamily: 'Nunito_800ExtraBold' },
   recordMeta: { color: theme.colors.textSecondary, fontSize: 13, fontFamily: 'Nunito_600SemiBold' },
-  verticalChartWrap: { gap: 12 },
-  verticalChartHeader: { gap: 8 },
-  verticalChartContainer: { height: 200, borderRadius: 16, backgroundColor: '#F7FBFC', borderWidth: 1, borderColor: theme.colors.border, padding: 12 },
+  lineChartWrap: { gap: 12 },
+  lineChartHeader: { gap: 8 },
+  lineChartContainer: { height: 200, borderRadius: 16, backgroundColor: '#F7FBFC', borderWidth: 1, borderColor: theme.colors.border, padding: 8 },
   viewModeTabs: { flexDirection: 'row', gap: 6 },
   viewModeTab: { paddingHorizontal: 12, paddingVertical: 7, borderRadius: theme.borderRadius.full, backgroundColor: '#F7FBFC', borderWidth: 1, borderColor: theme.colors.border },
   viewModeTabActive: { backgroundColor: theme.colors.primary, borderColor: theme.colors.primary },
   viewModeTabText: { color: theme.colors.buttonDark, fontFamily: 'Nunito_700Bold', fontSize: 12 },
   viewModeTabTextActive: { color: theme.colors.textPrimary },
-  barChartTitle: { color: theme.colors.buttonDark, fontFamily: 'Nunito_800ExtraBold', fontSize: 15 },
-  barLegendRow: { flexDirection: 'row', gap: 16, marginTop: 4 },
-  barLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
-  barLegendDot: { width: 8, height: 8, borderRadius: 4 },
-  barLegendText: { color: theme.colors.textSecondary, fontFamily: 'Nunito_700Bold', fontSize: 12 },
+  lineChartTitle: { color: theme.colors.buttonDark, fontFamily: 'Nunito_800ExtraBold', fontSize: 15 },
+  lineLegendRow: { flexDirection: 'row', gap: 16, marginTop: 4 },
+  lineLegendItem: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  lineLegendDot: { width: 8, height: 8, borderRadius: 4 },
+  lineLegendText: { color: theme.colors.textSecondary, fontFamily: 'Nunito_700Bold', fontSize: 12 },
 });

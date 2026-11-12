@@ -1,9 +1,12 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Animated, Pressable, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LocalizedText as Text } from '@/components/LocalizedText';
 import { theme } from '@/constants/Colors';
+import { useAppSettings } from '@/components/AppSettings';
+import { completeWelcome } from '@/components/LaunchFlow';
 import { useAppTheme } from '@/components/useAppTheme';
 import { useThemedStyles } from '@/components/useThemedStyles';
 
@@ -11,8 +14,31 @@ export default function WelcomeScreen() {
   const theme = useAppTheme();
   const styles = useThemedStyles(baseStyles);
   const router = useRouter();
+  const { isReady, preferences } = useAppSettings();
+  const [step, setStep] = useState(0);
+  const fade = useRef(new Animated.Value(1)).current;
+  const steps = [
+    { icon: 'calendar' as const, title: 'Welcome to Todo Planner', body: 'Plan your day and keep your goals moving, one step at a time.' },
+    { icon: 'checkbox' as const, title: 'Break work into steps', body: 'Create tasks, add subtasks, schedule reminders, and track progress.' },
+    { icon: 'briefcase' as const, title: 'Keep everything together', body: 'Manage notes, profiles, and job applications from one home.' },
+  ];
+  const currentStep = steps[step];
+
+  useEffect(() => {
+    fade.setValue(0);
+    Animated.timing(fade, { toValue: 1, duration: 420, useNativeDriver: true }).start();
+  }, [fade, step]);
+
   const startApp = () => {
-    router.replace('/(tabs)');
+    if (!isReady) return;
+    completeWelcome();
+    const destinations = {
+      home: '/(tabs)',
+      planner: '/(tabs)/planner',
+      calendar: '/(tabs)/calendar',
+      overview: '/(tabs)/overview',
+    } as const;
+    router.replace(destinations[preferences.defaultView] as never);
   };
 
   return (
@@ -30,18 +56,14 @@ export default function WelcomeScreen() {
           <View style={styles.notchCamera} />
           <View style={styles.notchSpeaker} />
         </View>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Tap anywhere to start using the planner"
-          style={styles.screen}
-          onPress={startApp}>
+        <View style={styles.screen}>
           <View style={styles.firstLaunchPill}>
-            <Text style={styles.firstLaunchText}>FIRST LAUNCH</Text>
+            <Text style={styles.firstLaunchText}>WELCOME · {step + 1} / {steps.length}</Text>
           </View>
 
-          <View style={styles.hero}>
+          <Animated.View style={[styles.hero, { opacity: fade }]}>
             <View style={styles.calendarIconCircle}>
-              <Ionicons name="calendar" size={38} color={theme.colors.actionForeground} />
+              <Ionicons name={currentStep.icon} size={38} color={theme.colors.actionForeground} />
               <Ionicons
                 name="checkmark"
                 size={19}
@@ -49,19 +71,33 @@ export default function WelcomeScreen() {
                 style={styles.calendarCheck}
               />
             </View>
-            <Text style={styles.title}>Todo Planner</Text>
-            <Text style={styles.subtitle}>
-              Track habits, routines, and scheduled milestones offline or synced.
-            </Text>
-          </View>
+            <Text style={styles.title}>{currentStep.title}</Text>
+            <Text style={styles.subtitle}>{currentStep.body}</Text>
+          </Animated.View>
 
           <View style={styles.footer}>
-            <View style={styles.tapIconCircle}>
-              <Ionicons name="hand-left" size={21} color={theme.colors.buttonDark} />
+            <View style={styles.stepDots}>
+              {steps.map((_, index) => (
+                <View key={index} style={[styles.stepDot, index === step && styles.stepDotActive]} />
+              ))}
             </View>
-            <Text style={styles.tapText}>TAP ANYWHERE TO START</Text>
+            <View style={styles.footerActions}>
+              {step > 0 ? (
+                <Pressable accessibilityRole="button" onPress={() => setStep((current) => current - 1)} style={styles.secondaryButton}>
+                  <Text style={styles.secondaryButtonText}>Back</Text>
+                </Pressable>
+              ) : <View style={styles.secondaryButton} />}
+              <Pressable
+                accessibilityRole="button"
+                disabled={!isReady}
+                onPress={() => step === steps.length - 1 ? startApp() : setStep((current) => current + 1)}
+                style={[styles.primaryButton, !isReady && styles.disabledButton]}>
+                <Text style={styles.primaryButtonText}>{step === steps.length - 1 ? 'Get started' : 'Continue'}</Text>
+                <Ionicons name={step === steps.length - 1 ? 'arrow-forward' : 'chevron-forward'} size={18} color={theme.colors.buttonDark} />
+              </Pressable>
+            </View>
           </View>
-        </Pressable>
+        </View>
       </View>
     </SafeAreaView>
   );
@@ -199,20 +235,57 @@ const baseStyles = StyleSheet.create({
     fontFamily: 'Nunito_600SemiBold',
   },
   footer: {
+    width: '100%',
     alignItems: 'center',
+    gap: 18,
+  },
+  stepDots: {
+    flexDirection: 'row',
     gap: 8,
   },
-  tapIconCircle: {
-    width: 40,
-    height: 40,
+  stepDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: 'rgba(255,255,255,0.42)',
+  },
+  stepDotActive: {
+    width: 22,
+    backgroundColor: theme.colors.cardBackground,
+  },
+  footerActions: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  secondaryButton: {
+    minWidth: 96,
+    minHeight: 44,
+    justifyContent: 'center',
+  },
+  secondaryButtonText: {
+    color: theme.colors.cardBackground,
+    fontSize: 14,
+    fontFamily: 'Nunito_700Bold',
+  },
+  primaryButton: {
+    minHeight: 44,
+    minWidth: 132,
+    paddingHorizontal: 15,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
+    gap: 6,
     backgroundColor: theme.colors.cardBackground,
     borderRadius: theme.borderRadius.full,
   },
-  tapText: {
-    color: theme.colors.cardBackground,
-    fontSize: 10,
+  disabledButton: {
+    opacity: 0.6,
+  },
+  primaryButtonText: {
+    color: theme.colors.buttonDark,
+    fontSize: 13,
     fontFamily: 'Nunito_800ExtraBold',
   },
 });

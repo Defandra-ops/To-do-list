@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import * as FileSystem from 'expo-file-system/legacy';
 import * as Sharing from 'expo-sharing';
 import { useRouter } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Image, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -16,6 +16,7 @@ import { LocalizedText as Text, LocalizedTextInput as TextInput } from '@/compon
 import { theme } from '@/constants/Colors';
 import { useAppTheme } from '@/components/useAppTheme';
 import { useThemedStyles } from '@/components/useThemedStyles';
+import { didCompleteWelcome } from '@/components/LaunchFlow';
 
 type ApplicationDraft = Pick<JobApplication, 'company' | 'role' | 'status' | 'appliedDate' | 'jobUrl' | 'notes'>;
 
@@ -94,6 +95,7 @@ export default function HomeScreen() {
   const theme = useAppTheme();
   const styles = useThemedStyles(baseStyles);
   const router = useRouter();
+  const isWelcomeComplete = didCompleteWelcome();
   const {
     tasks,
     users,
@@ -118,6 +120,9 @@ export default function HomeScreen() {
     notes: '',
   });
   const [applicationError, setApplicationError] = useState('');
+  useEffect(() => {
+    if (!isWelcomeComplete) router.replace('/welcome');
+  }, [isWelcomeComplete, router]);
   const activeUser = users.find((user) => user.id === activeUserId);
   const activeUserName = activeUser?.name ?? 'Planner';
   const userTasks = tasks.filter(
@@ -149,6 +154,8 @@ export default function HomeScreen() {
   const openMenuItem = (route: (typeof menuItems)[number]['route']) => {
     router.push(route as never);
   };
+
+  if (!isWelcomeComplete) return null;
 
   const openNewApplicationForm = () => {
     setIsApplicationTrackerVisible(false);

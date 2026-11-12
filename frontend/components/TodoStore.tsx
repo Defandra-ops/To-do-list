@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef, useState 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
-import { useAppSettings } from '@/components/AppSettings';
+import { useAppSettings, type AppPreferences } from '@/components/AppSettings';
 
 export type Subtask = {
   id: string;
@@ -41,6 +41,7 @@ export type UserAccount = {
   age: number | null;
   photoUri: string;
   dailyFocus: string;
+  email?: string;
 };
 
 export type Note = {
@@ -79,10 +80,14 @@ type TodoStoreValue = {
   jobApplications: JobApplication[];
   users: UserAccount[];
   activeUserId: string;
+  syncStatus: 'offline' | 'syncing' | 'synced' | 'error';
+  syncNow: () => Promise<void>;
+  resetAppData: () => void;
+  restoreAppState: (payload: Partial<PersistedAppState>) => void;
   addUser: (name: string) => void;
   updateUserProfile: (
     userId: string,
-    updates: Partial<Pick<UserAccount, 'name' | 'age' | 'photoUri' | 'dailyFocus'>>
+    updates: Partial<Pick<UserAccount, 'name' | 'age' | 'photoUri' | 'dailyFocus' | 'email'>>
   ) => void;
   setActiveUserId: (userId: string) => void;
   addTask: (
@@ -142,6 +147,7 @@ const defaultUser: UserAccount = {
   age: null,
   photoUri: '',
   dailyFocus: '',
+  email: '',
 };
 const initialUsers: UserAccount[] = [defaultUser];
 
@@ -211,9 +217,20 @@ const getTodayIsoDate = () => {
   return `${today.getFullYear()}-${`${today.getMonth() + 1}`.padStart(2, '0')}-${`${today.getDate()}`.padStart(2, '0')}`;
 };
 
-async function syncTaskNotifications(tasks: Task[], requestPermission: boolean, enabled: boolean) {
+async function syncTaskNotifications(
+  tasks: Task[],
+  activeUserId: string,
+  requestPermission: boolean,
+  enabled: boolean,
+  preferences: AppPreferences
+) {
   if (Platform.OS === 'web') return;
 
+  const userTasks = tasks.filter(
+    (task) =>
+      task.assignedUserIds.includes(activeUserId) ||
+      (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId)
+  );
   const scheduled = await Notifications.getAllScheduledNotificationsAsync();
   const reminderNotifications = scheduled.filter(
     (notification) => notification.content.data[REMINDER_DATA_KEY] === true
@@ -228,10 +245,10 @@ async function syncTaskNotifications(tasks: Task[], requestPermission: boolean, 
   }
 
   const today = getTodayIsoDate();
-  const activeTasks = tasks.filter((task) =>
+  const activeTasks = userTasks.filter((task) =>
     task.isDaily
       ? (!task.startDate || task.startDate <= today) && (!task.endDate || task.endDate >= today)
-      : !task.completed && (!task.startDate || task.startDate <= today)
+      : !getUserTaskProgress(task, activeUserId).completed && (!task.startDate || task.startDate <= today)
   );
   const permissions = await Notifications.getPermissionsAsync();
   const granted = permissions.granted || (requestPermission && (await Notifications.requestPermissionsAsync()).granted);
@@ -241,7 +258,8 @@ async function syncTaskNotifications(tasks: Task[], requestPermission: boolean, 
     await Notifications.setNotificationChannelAsync('task-reminders', {
       name: 'Task reminders',
       importance: Notifications.AndroidImportance.HIGH,
-      sound: 'default',
+      sound: preferences.soundEnabled ? 'default' : null,
+      enableVibrate: preferences.vibrationEnabled,
     });
   }
 
@@ -259,6 +277,10 @@ async function syncTaskNotifications(tasks: Task[], requestPermission: boolean, 
     Notifications.scheduleNotificationAsync({
       content: {
         ...content,
+        sound: preferences.soundEnabled ? 'default' : false,
+        ...(Platform.OS === 'android' ? {
+          vibrate: preferences.vibrationEnabled ? [0, 250, 250, 250] : [0],
+        } : {}),
         data: { ...content.data, [REMINDER_DATA_KEY]: true },
         ...(Platform.OS === 'android' ? { channelId: 'task-reminders' } : {}),
       },
@@ -291,12 +313,15 @@ async function syncTaskNotifications(tasks: Task[], requestPermission: boolean, 
     const dayBefore = new Date(`${task.endDate}T00:00:00`);
     dayBefore.setDate(dayBefore.getDate() - 1);
     const dayBeforeIso = `${dayBefore.getFullYear()}-${`${dayBefore.getMonth() + 1}`.padStart(2, '0')}-${`${dayBefore.getDate()}`.padStart(2, '0')}`;
-    const nearDeadline = getLocalDateAt(dayBeforeIso, 9);
+    const [dueHour, dueMinute] = preferences.defaultDueTime.split(':').map(Number);
+    const nearDeadline = getLocalDateAt(dayBeforeIso, dueHour);
+    nearDeadline.setMinutes(dueMinute);
     if (nearDeadline > now) {
       reminders.push({ date: nearDeadline, body: `Due tomorrow: ${task.title}` });
     }
 
-    const deadline = getLocalDateAt(task.endDate, 9);
+    const deadline = getLocalDateAt(task.endDate, dueHour);
+    deadline.setMinutes(dueMinute);
     if (deadline > now) {
       reminders.push({ date: deadline, body: `Due today: ${task.title}` });
     }
@@ -309,19 +334,23 @@ async function syncTaskNotifications(tasks: Task[], requestPermission: boolean, 
     );
   });
 
-  const ongoingTasks = activeTasks.filter((task) => !task.isDaily);
-  const ongoingReminder = ongoingTasks.length > 0
+  const unfinishedCount = activeTasks.filter((task) => !getUserTaskProgress(task, activeUserId).completed).length;
+  const digestReminder = preferences.dailyDigestEnabled && unfinishedCount > 0
     ? scheduleReminder(
         {
-          title: 'Tasks still in progress',
-          body: `You have ${ongoingTasks.length} unfinished task${ongoingTasks.length === 1 ? '' : 's'} to keep moving.`,
-          data: { route: '/(tabs)/calendar' },
+          title: 'Your daily task summary',
+          body: `You have ${unfinishedCount} task${unfinishedCount === 1 ? '' : 's'} to work on today.`,
+          data: { route: '/(tabs)/calendar', digest: true },
         },
-        { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: 9, minute: 0 }
+        {
+          type: Notifications.SchedulableTriggerInputTypes.DAILY,
+          hour: Number(preferences.dailyDigestTime.split(':')[0]),
+          minute: Number(preferences.dailyDigestTime.split(':')[1]),
+        }
       )
     : Promise.resolve();
 
-  await Promise.all([...dailyReminders, ...deadlineReminders, ongoingReminder]);
+  await Promise.all([...dailyReminders, ...deadlineReminders, digestReminder]);
 }
 
 const apiBaseUrl =
@@ -339,13 +368,16 @@ const serializeRemoteState = (state: PersistedAppState) =>
   });
 
 export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
-  const { notificationsEnabled, isReady: areSettingsReady } = useAppSettings();
+  const { notificationsEnabled, preferences, isReady: areSettingsReady } = useAppSettings();
   const [users, setUsers] = useState<UserAccount[]>(initialUsers);
   const [activeUserId, setActiveUserId] = useState(initialUsers[0].id);
   const [tasks, setTasks] = useState<Task[]>(initialTasks);
   const [notes, setNotes] = useState<Note[]>(initialNotes);
   const [jobApplications, setJobApplications] = useState<JobApplication[]>(initialJobApplications);
   const [isHydrated, setIsHydrated] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'offline' | 'syncing' | 'synced' | 'error'>(
+    apiBaseUrl ? 'syncing' : 'offline'
+  );
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const localSnapshotRef = useRef('');
@@ -369,6 +401,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
             ? localPhotoUrisRef.current[user.id] ?? ''
             : typeof user.photoUri === 'string' ? user.photoUri : '',
           dailyFocus: typeof user.dailyFocus === 'string' ? user.dailyFocus : '',
+          email: typeof user.email === 'string' ? user.email : '',
         }))
       : initialUsers;
     const today = getTodayIsoDate();
@@ -502,6 +535,65 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     localSnapshotRef.current = JSON.stringify(nextState);
   };
 
+  const syncNow = async () => {
+    if (!apiBaseUrl) {
+      setSyncStatus('offline');
+      return;
+    }
+
+    setSyncStatus('syncing');
+    try {
+      const payload: PersistedAppState = { users, activeUserId, tasks, notes, jobApplications };
+      const localSnapshot = JSON.stringify(payload);
+      const localRemoteSnapshot = serializeRemoteState(payload);
+      const response = await fetch(`${apiBaseUrl}/state`);
+      if (!response.ok) throw new Error(`Server returned ${response.status}`);
+      const serverPayload = (await response.json()) as Partial<PersistedAppState>;
+      const normalizedServerState = normalizeState(serverPayload, true);
+      const serverSnapshot = serializeRemoteState(normalizedServerState);
+
+      if (serverSnapshot !== remoteSnapshotRef.current && serverSnapshot !== localRemoteSnapshot) {
+        applyState(normalizedServerState, true);
+        await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalizedServerState));
+        localSnapshotRef.current = JSON.stringify(normalizedServerState);
+      } else if (serverSnapshot !== localRemoteSnapshot) {
+        const saveResponse = await fetch(`${apiBaseUrl}/state`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: localRemoteSnapshot,
+        });
+        if (!saveResponse.ok) throw new Error(`Server returned ${saveResponse.status}`);
+        await AsyncStorage.setItem(STORAGE_KEY, localSnapshot);
+        localSnapshotRef.current = localSnapshot;
+      }
+
+      remoteSnapshotRef.current = serverSnapshot === remoteSnapshotRef.current && serverSnapshot !== localRemoteSnapshot
+        ? localRemoteSnapshot
+        : serverSnapshot;
+      setSyncStatus('synced');
+    } catch (error) {
+      setSyncStatus('error');
+      throw error;
+    }
+  };
+
+  const restoreAppState = (payload: Partial<PersistedAppState>) => {
+    const restored = normalizeState(payload, true);
+    applyState(restored);
+  };
+
+  const resetAppData = () => {
+    const emptyState: PersistedAppState = {
+      users: initialUsers,
+      activeUserId: defaultUser.id,
+      tasks: [],
+      notes: [],
+      jobApplications: [],
+    };
+    localPhotoUrisRef.current = {};
+    applyState(emptyState);
+  };
+
   useEffect(() => {
     const loadState = async () => {
       try {
@@ -525,7 +617,10 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
 
       try {
         const response = await fetch(`${apiBaseUrl}/state`);
-        if (!response.ok) return;
+        if (!response.ok) {
+          setSyncStatus('error');
+          return;
+        }
 
         const serverPayload = (await response.json()) as Partial<PersistedAppState>;
         const normalized = normalizeState(serverPayload, true);
@@ -536,7 +631,9 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
           await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
         }
         remoteSnapshotRef.current = serverSnapshot;
+        setSyncStatus('synced');
       } catch (error) {
+        setSyncStatus('error');
         console.error('Failed to load server app state:', error);
       }
     };
@@ -590,7 +687,9 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
           throw new Error(`Server returned ${response.status}`);
         }
         remoteSnapshotRef.current = remoteSnapshot;
+        setSyncStatus('synced');
       } catch (error) {
+        setSyncStatus('error');
         console.error('Failed to save server app state:', error);
       }
     }, 450);
@@ -620,7 +719,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     if (requestPermission) notificationPermissionRequestedRef.current = true;
 
     notificationSyncQueueRef.current = notificationSyncQueueRef.current
-      .then(() => syncTaskNotifications(tasks, requestPermission, notificationsEnabled))
+      .then(() => syncTaskNotifications(tasks, activeUserId, requestPermission, notificationsEnabled, preferences))
       .catch((error) => {
         if (isCurrent) console.error('Failed to sync task reminders:', error);
       });
@@ -628,7 +727,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isCurrent = false;
     };
-  }, [areSettingsReady, isHydrated, notificationsEnabled, tasks]);
+  }, [activeUserId, areSettingsReady, isHydrated, notificationsEnabled, preferences, tasks]);
 
   useEffect(() => {
     if (!isHydrated) return;
@@ -673,18 +772,26 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
     const timer = setInterval(async () => {
       try {
         const response = await fetch(`${apiBaseUrl}/state`);
-        if (!response.ok) return;
+        if (!response.ok) {
+          setSyncStatus('error');
+          return;
+        }
 
         const serverPayload = (await response.json()) as Partial<PersistedAppState>;
         const normalized = normalizeState(serverPayload, true);
         const serverSnapshot = serializeRemoteState(normalized);
 
-        if (serverSnapshot === remoteSnapshotRef.current) return;
+        if (serverSnapshot === remoteSnapshotRef.current) {
+          setSyncStatus('synced');
+          return;
+        }
 
         applyState(normalized, true);
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(normalized));
         remoteSnapshotRef.current = serverSnapshot;
+        setSyncStatus('synced');
       } catch (error) {
+        setSyncStatus('error');
         console.error('Failed to sync server app state:', error);
       }
     }, SYNC_INTERVAL_MS);
@@ -708,7 +815,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
         return prev;
       }
 
-      const nextUser: UserAccount = { id: buildId(), name: cleaned, age: null, photoUri: '', dailyFocus: '' };
+      const nextUser: UserAccount = { id: buildId(), name: cleaned, age: null, photoUri: '', dailyFocus: '', email: '' };
       setActiveUserId(nextUser.id);
       return [nextUser, ...prev];
     });
@@ -743,27 +850,27 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
       return result;
     }, {});
 
-    setTasks((prev) => [
-      {
-        id: buildId(),
-        title: cleaned,
-        completed: false,
-        completedOn: '',
-        isDaily,
-        dailyTime,
-        appName: appName.trim(),
-        appPackageName: appPackageName.trim(),
-        startDate: nextStartDate,
-        endDate,
-        createdByUserId: activeUserId,
-        deadlineByUserId: activeUserId,
-        participantUserIds: [activeUserId],
-        assignedUserIds: nextAssignedUserIds,
-        subtasks: [],
-        progressByUserId,
-      },
-      ...prev,
-    ]);
+    const nextTask: Task = {
+      id: buildId(),
+      title: cleaned,
+      completed: false,
+      completedOn: '',
+      isDaily,
+      dailyTime,
+      appName: appName.trim(),
+      appPackageName: appPackageName.trim(),
+      startDate: nextStartDate,
+      endDate,
+      createdByUserId: activeUserId,
+      deadlineByUserId: activeUserId,
+      participantUserIds: [activeUserId],
+      assignedUserIds: nextAssignedUserIds,
+      subtasks: [],
+      progressByUserId,
+    };
+    setTasks((prev) =>
+      preferences.taskPosition === 'top' ? [nextTask, ...prev] : [...prev, nextTask]
+    );
   };
 
   const removeTask = (taskId: string) => {
@@ -1054,6 +1161,10 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
       jobApplications,
       users,
       activeUserId,
+      syncStatus,
+      syncNow,
+      resetAppData,
+      restoreAppState,
       addUser,
       updateUserProfile,
       setActiveUserId,
@@ -1073,7 +1184,7 @@ export function TodoStoreProvider({ children }: { children: React.ReactNode }) {
       updateJobApplication,
       removeJobApplication,
     }),
-    [activeUserId, jobApplications, notes, tasks, users]
+    [activeUserId, jobApplications, notes, syncStatus, tasks, users]
   );
 
   return <TodoStoreContext.Provider value={value}>{children}</TodoStoreContext.Provider>;

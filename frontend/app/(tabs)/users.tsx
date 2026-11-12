@@ -16,6 +16,7 @@ type ProfileDraft = {
   age: string;
   dailyFocus: string;
   photoUri: string;
+  email: string;
 };
 
 const createDraft = (user: UserAccount): ProfileDraft => ({
@@ -23,6 +24,7 @@ const createDraft = (user: UserAccount): ProfileDraft => ({
   age: user.age === null ? '' : String(user.age),
   dailyFocus: user.dailyFocus,
   photoUri: user.photoUri,
+  email: user.email ?? '',
 });
 
 export default function UsersScreen() {
@@ -89,12 +91,18 @@ export default function UsersScreen() {
       setFormError('Enter an age between 1 and 120, or leave it blank.');
       return;
     }
+    const email = profileDraft.email.trim();
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setFormError('Enter a valid email address, or leave it blank.');
+      return;
+    }
 
     updateUserProfile(editingUserId, {
       name,
       age,
       dailyFocus: profileDraft.dailyFocus.trim(),
       photoUri: profileDraft.photoUri,
+      email,
     });
     setEditingUserId(null);
     setProfileDraft(null);
@@ -173,7 +181,7 @@ export default function UsersScreen() {
                     <View style={styles.userInfo}>
                       <Text style={styles.userName}>{user.name}</Text>
                       <Text style={styles.userMeta}>
-                        {user.age ? `${user.age} years old` : 'Age not set'}{isActive ? ' · Active' : ''}
+                        {[user.age ? `${user.age} years old` : 'Age not set', user.email].filter(Boolean).join(' · ')}{isActive ? ' · Active' : ''}
                       </Text>
                     </View>
                   </Pressable>
@@ -234,6 +242,18 @@ export default function UsersScreen() {
                       onChangeText={(value) => updateDraft('age', value.replace(/[^0-9]/g, '').slice(0, 3))}
                       keyboardType="number-pad"
                       maxLength={3}
+                    />
+
+                    <Text style={styles.fieldLabel}>Email (optional, not used to sign in)</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Email address"
+                      placeholderTextColor={theme.colors.textSecondary}
+                      value={profileDraft.email}
+                      onChangeText={(value) => updateDraft('email', value)}
+                      keyboardType="email-address"
+                      autoCapitalize="none"
+                      maxLength={120}
                     />
 
                     <Text style={styles.fieldLabel}>Hobbies or daily routines</Text>

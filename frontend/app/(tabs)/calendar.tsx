@@ -50,11 +50,15 @@ const formatDate = (date: string, language: 'en' | 'id') =>
     year: 'numeric',
   });
 
-const formatTime = (time: string, language: 'en' | 'id') => {
+const formatTime = (time: string, language: 'en' | 'id', format: '12h' | '24h') => {
   const [hour, minute] = time.split(':').map(Number);
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
-  return date.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en', { hour: 'numeric', minute: '2-digit' });
+  return date.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en', {
+    hour: format === '24h' ? '2-digit' : 'numeric',
+    minute: '2-digit',
+    hour12: format === '12h',
+  });
 };
 
 const getOccupiedDayCount = (startDate: string, endDate: string) => {
@@ -66,15 +70,16 @@ const getOccupiedDayCount = (startDate: string, endDate: string) => {
 export default function CalendarScreen({ embedded = false }: { embedded?: boolean }) {
   const theme = useAppTheme();
   const styles = useThemedStyles(baseStyles);
-  const { language } = useAppSettings();
+  const { language, preferences } = useAppSettings();
   const { tasks: allTasks, activeUserId } = useTodoStore();
   const tasks = useMemo(
     () => allTasks.filter(
       (task) =>
-        task.assignedUserIds.includes(activeUserId) ||
-        (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId)
+        (task.assignedUserIds.includes(activeUserId) ||
+          (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId)) &&
+        (!preferences.hideCompletedTasks || !getUserTaskProgress(task, activeUserId).completed)
     ),
-    [activeUserId, allTasks]
+    [activeUserId, allTasks, preferences.hideCompletedTasks]
   );
   const today = toIsoDate(new Date());
   const isCompletedForActiveUser = useCallback((task: Task) => {
@@ -90,7 +95,8 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
   const [modalTask, setModalTask] = useState<Task | null>(null);
 
   const monthDays = useMemo(() => {
-    const firstWeekday = new Date(month.getFullYear(), month.getMonth(), 1).getDay();
+    const weekday = new Date(month.getFullYear(), month.getMonth(), 1).getDay();
+    const firstWeekday = preferences.weekStartsOn === 'monday' ? (weekday + 6) % 7 : weekday;
     const dayCount = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
     return Array.from({ length: 42 }, (_, index) => {
       const day = index - firstWeekday + 1;
@@ -98,7 +104,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
         ? toIsoDate(new Date(month.getFullYear(), month.getMonth(), day))
         : '';
     });
-  }, [month]);
+  }, [month, preferences.weekStartsOn]);
 
   const dueSoonTasks = useMemo(
     () => tasks.filter((task) => !isCompletedForActiveUser(task) && task.endDate >= today && task.endDate <= addDays(today, 3)),
@@ -130,7 +136,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
           <Text style={styles.taskTitle}>{task.title}</Text>
           <Text style={styles.taskMeta}>
               {task.isDaily
-                ? `Daily at ${formatTime(task.dailyTime, language)}${task.endDate ? ` · until ${task.endDate}` : ''}`
+                ? `Daily at ${formatTime(task.dailyTime, language, preferences.timeFormat)}${task.endDate ? ` · until ${task.endDate}` : ''}`
                 : task.endDate ? `Deadline ${task.endDate}` : task.startDate ? `Started ${task.startDate}` : 'No dates set'}
           </Text>
             {task.appName ? <Text style={styles.taskMeta}>{task.appName}</Text> : null}
@@ -196,7 +202,12 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
           </View>
 
           <View style={styles.weekdays}>
-            {(language === 'id' ? ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S']).map((day, index) => (
+            {(language === 'id' ? ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S'])
+              .slice(preferences.weekStartsOn === 'monday' ? 1 : 0)
+              .concat(preferences.weekStartsOn === 'monday'
+                ? (language === 'id' ? ['Min'] : ['S'])
+                : [])
+              .map((day, index) => (
               <Text key={`${day}-${index}`} style={styles.weekday}>{day}</Text>
             ))}
           </View>
@@ -316,7 +327,7 @@ export default function CalendarScreen({ embedded = false }: { embedded?: boolea
                   <View style={styles.detailTextWrap}>
                     <Text style={styles.detailLabel}>Time</Text>
                     <Text style={styles.detailValue}>
-                      {modalTask.isDaily ? `Every day at ${formatTime(modalTask.dailyTime, language)}` : 'All day'}
+                      {modalTask.isDaily ? `Every day at ${formatTime(modalTask.dailyTime, language, preferences.timeFormat)}` : 'All day'}
                     </Text>
                   </View>
                 </View>

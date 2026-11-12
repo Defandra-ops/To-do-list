@@ -3,17 +3,21 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import * as Haptics from 'expo-haptics';
 import {
+  Alert,
   ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Keyboard,
+  LayoutAnimation,
   Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Switch,
+  UIManager,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -87,11 +91,15 @@ const formatReadableDate = (date: string, language: 'en' | 'id') =>
     year: 'numeric',
   });
 
-const formatTime = (time: string, language: 'en' | 'id') => {
+const formatTime = (time: string, language: 'en' | 'id', format: '12h' | '24h') => {
   const [hour, minute] = time.split(':').map(Number);
   const date = new Date();
   date.setHours(hour, minute, 0, 0);
-  return date.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en', { hour: 'numeric', minute: '2-digit' });
+  return date.toLocaleTimeString(language === 'id' ? 'id-ID' : 'en', {
+    hour: format === '24h' ? '2-digit' : 'numeric',
+    minute: '2-digit',
+    hour12: format === '12h',
+  });
 };
 
 const parseTime = (time: string) => {
@@ -106,7 +114,7 @@ const toTimeValue = (date: Date) => `${`${date.getHours()}`.padStart(2, '0')}:${
 export default function PlannerScreen() {
   const theme = useAppTheme();
   const styles = useThemedStyles(baseStyles);
-  const { language } = useAppSettings();
+  const { language, preferences } = useAppSettings();
   const {
     tasks,
     users,
@@ -130,10 +138,11 @@ export default function PlannerScreen() {
       ? progress.completed && progress.completedOn === getLocalIsoDate()
       : progress.completed;
   };
+  const [showHistory, setShowHistory] = useState(false);
   const [selectedAssigneeIds, setSelectedAssigneeIds] = useState<string[]>([]);
   const [taskDraft, setTaskDraft] = useState('');
   const [taskPeriod, setTaskPeriod] = useState<'daily' | 'weekly' | 'monthly'>('monthly');
-  const [dailyTimeDraft, setDailyTimeDraft] = useState('09:00');
+  const [dailyTimeDraft, setDailyTimeDraft] = useState(preferences.defaultDueTime);
   const [appNameDraft, setAppNameDraft] = useState('');
   const [appPackageNameDraft, setAppPackageNameDraft] = useState('');
   const [startDateDraft, setStartDateDraft] = useState('');
@@ -161,22 +170,53 @@ export default function PlannerScreen() {
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const taskListRef = useRef<FlatList<Task>>(null);
-  const pendingSubtaskScrollIndex = useRef<number | null>(null);
+  const focusedInputTag = useRef<number | null>(null);
+  const keyboardTopY = useRef<number | null>(null);
+  const taskListScrollOffset = useRef(0);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  const scrollToFocusedSubtask = () => {
-    const index = pendingSubtaskScrollIndex.current;
-    if (index === null) return;
-    taskListRef.current?.scrollToIndex({ index, viewPosition: 0.12, animated: true });
-    pendingSubtaskScrollIndex.current = null;
+  useEffect(() => {
+    if (Platform.OS === 'android') {
+      UIManager.setLayoutAnimationEnabledExperimental?.(true);
+    }
+  }, []);
+
+  const scrollFocusedInputAboveKeyboard = (topY: number) => {
+    const inputTag = focusedInputTag.current;
+    if (inputTag === null) return;
+
+    UIManager.measureInWindow(inputTag, (_x, y, _width, height) => {
+      const overlap = y + height + 16 - topY;
+      if (overlap > 0) {
+        taskListRef.current?.scrollToOffset({
+          offset: taskListScrollOffset.current + overlap,
+          animated: true,
+        });
+      }
+    });
   };
 
   useEffect(() => {
-    const subscription = Keyboard.addListener('keyboardDidShow', scrollToFocusedSubtask);
-    return () => subscription.remove();
+    const showSubscription = Keyboard.addListener('keyboardDidShow', (event) => {
+      const topY = event.endCoordinates.screenY;
+      keyboardTopY.current = topY;
+      setKeyboardHeight(event.endCoordinates.height);
+      requestAnimationFrame(() => scrollFocusedInputAboveKeyboard(topY));
+    });
+    const hideSubscription = Keyboard.addListener('keyboardDidHide', () => {
+      focusedInputTag.current = null;
+      keyboardTopY.current = null;
+      setKeyboardHeight(0);
+    });
+    return () => {
+      showSubscription.remove();
+      hideSubscription.remove();
+    };
   }, []);
 
   const pickerMonthDays = useMemo(() => {
-    const firstWeekday = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth(), 1).getDay();
+    const weekday = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth(), 1).getDay();
+    const firstWeekday = preferences.weekStartsOn === 'monday' ? (weekday + 6) % 7 : weekday;
     const daysInMonth = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth() + 1, 0).getDate();
     return Array.from({ length: 42 }, (_, index) => {
       const day = index - firstWeekday + 1;
@@ -184,7 +224,7 @@ export default function PlannerScreen() {
       const date = new Date(pickerMonth.getFullYear(), pickerMonth.getMonth(), day);
       return formatIsoDate(date);
     });
-  }, [pickerMonth]);
+  }, [pickerMonth, preferences.weekStartsOn]);
 
   const pickerOccupiedTasks = useMemo(
     () => tasks.filter(
@@ -211,17 +251,28 @@ export default function PlannerScreen() {
     }, {});
   }, [users]);
   const visibleTasks = useMemo(
-    () => tasks.filter(
-      (task) =>
-        task.assignedUserIds.includes(activeUserId) ||
-        (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId)
-    ),
-    [activeUserId, tasks]
+    () => {
+      const today = getLocalIsoDate();
+      return tasks.filter((task) => {
+        const belongsToUser = task.assignedUserIds.includes(activeUserId) ||
+          (task.assignedUserIds.length === 0 && task.createdByUserId === activeUserId);
+        if (!belongsToUser) return false;
+
+        const completed = isTaskCompletedForActiveUser(task);
+        const deadlinePassed = Boolean(task.endDate) && task.endDate < today;
+        const archived = deadlinePassed || completed;
+        return showHistory ? archived : !archived;
+      });
+    },
+    [activeUserId, showHistory, tasks]
   );
 
-  const focusSubtaskInput = (index: number) => {
-    pendingSubtaskScrollIndex.current = index;
-    if (Keyboard.isVisible()) requestAnimationFrame(scrollToFocusedSubtask);
+  const focusPlannerInput = (inputTag: number) => {
+    focusedInputTag.current = inputTag;
+    const topY = keyboardTopY.current;
+    if (Keyboard.isVisible() && topY !== null) {
+      requestAnimationFrame(() => scrollFocusedInputAboveKeyboard(topY));
+    }
   };
 
   const stats = useMemo(() => {
@@ -240,18 +291,12 @@ export default function PlannerScreen() {
     );
     const doneSubtasks = allSubtasks.filter((subtask) => subtask.completed).length;
     const withDeadlines = userTasks.filter((task) => task.endDate).length;
-    const today = getLocalIsoDate();
-    const overdueTasks = userTasks.filter(
-      (task) => Boolean(task.endDate) && !getUserTaskProgress(task, activeUserId).completed && task.endDate < today
-    );
-
     return {
       totalTasks,
       doneTasks,
       allSubtasks: allSubtasks.length,
       doneSubtasks,
       withDeadlines,
-      overdueTasks,
     };
   }, [activeUserId, tasks]);
 
@@ -288,7 +333,7 @@ export default function PlannerScreen() {
     setStartDateDraft('');
     setEndDateDraft('');
     setTaskPeriod('monthly');
-    setDailyTimeDraft('09:00');
+    setDailyTimeDraft(preferences.defaultDueTime);
     setAppNameDraft('');
     setAppPackageNameDraft('');
     setSelectedAssigneeIds([]);
@@ -303,6 +348,39 @@ export default function PlannerScreen() {
 
   const setSubtaskDraft = (taskId: string, value: string) => {
     setSubtaskDrafts((prev) => ({ ...prev, [taskId]: value }));
+  };
+
+  const toggleTaskWithFeedback = (taskId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    toggleTask(taskId);
+    if (preferences.completionFeedback && preferences.vibrationEnabled) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+        .catch((error) => console.error('Task completion haptic failed:', error));
+    }
+  };
+
+  const toggleSubtaskWithFeedback = (taskId: string, subtaskId: string) => {
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    toggleSubtask(taskId, subtaskId);
+    if (preferences.completionFeedback && preferences.vibrationEnabled) {
+      void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+        .catch((error) => console.error('Subtask completion haptic failed:', error));
+    }
+  };
+
+  const confirmRemoveTask = (taskId: string, title: string) => {
+    if (!preferences.confirmBeforeDelete) {
+      removeTask(taskId);
+      return;
+    }
+    if (Platform.OS === 'web') {
+      if (window.confirm(`“${title}” will be permanently removed.`)) removeTask(taskId);
+      return;
+    }
+    Alert.alert('Delete task?', `“${title}” will be permanently removed.`, [
+      { text: 'Cancel', style: 'cancel' },
+      { text: 'Delete', style: 'destructive', onPress: () => removeTask(taskId) },
+    ]);
   };
 
   const openDatePicker = (target: DatePickerTarget) => {
@@ -505,7 +583,11 @@ export default function PlannerScreen() {
         ref={taskListRef}
         data={visibleTasks}
         keyExtractor={(item) => item.id}
-        contentContainerStyle={styles.content}
+        contentContainerStyle={[styles.content, { paddingBottom: 48 + keyboardHeight }]}
+        onScroll={(event) => {
+          taskListScrollOffset.current = event.nativeEvent.contentOffset.y;
+        }}
+        scrollEventThrottle={16}
         ListHeaderComponent={
           <View style={styles.headerWrap}>
             <View style={styles.heroCard}>
@@ -536,37 +618,30 @@ export default function PlannerScreen() {
               </View>
             </View>
 
-            {stats.overdueTasks.length > 0 ? (
-              <View style={styles.overdueCard}>
-                <View style={styles.overdueHeader}>
-                  <View style={styles.overdueDot} />
-                  <View style={styles.overdueTextWrap}>
-                    <Text style={styles.overdueTitle}>Overdue tasks</Text>
-                    <Text style={styles.overdueSubtitle}>
-                      {stats.overdueTasks.length} task{stats.overdueTasks.length === 1 ? '' : 's'} missed the deadline
-                    </Text>
-                  </View>
-                </View>
+            <View style={styles.taskViewTabs}>
+              {([false, true] as const).map((history) => (
+                <Pressable
+                  key={String(history)}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: showHistory === history }}
+                  style={[styles.taskViewTab, showHistory === history && styles.taskViewTabActive]}
+                  onPress={() => setShowHistory(history)}>
+                  <Text style={[styles.taskViewTabText, showHistory === history && styles.taskViewTabTextActive]}>
+                    {history ? 'History' : 'Tasks'}
+                  </Text>
+                </Pressable>
+              ))}
+            </View>
 
-                <View style={styles.overdueChipRow}>
-                  {stats.overdueTasks.map((task) => (
-                    <View key={task.id} style={styles.overdueChip}>
-                      <Text style={styles.overdueChipText}>
-                        {task.title} · {userById[task.createdByUserId] ?? 'Unknown user'}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-              </View>
-            ) : null}
-
-            <View style={styles.composerCard}>
+            {!showHistory && (
+              <View style={styles.composerCard}>
               <TextInput
                 style={styles.taskInput}
                 placeholder="Add a task..."
                 placeholderTextColor={theme.colors.textSecondary}
                 value={taskDraft}
                 onChangeText={setTaskDraft}
+                onFocus={(event) => focusPlannerInput(event.nativeEvent.target)}
                 returnKeyType="next"
               />
 
@@ -627,7 +702,7 @@ export default function PlannerScreen() {
                   </Pressable>
                   <Pressable style={styles.dailyTimeButton} onPress={() => openTimePicker({ scope: 'new' })}>
                     <Ionicons name="time-outline" size={18} color={theme.colors.buttonDark} />
-                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(dailyTimeDraft, language)}</Text>
+                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(dailyTimeDraft, language, preferences.timeFormat)}</Text>
                     <Ionicons name="chevron-forward" size={16} color={theme.colors.textSecondary} />
                   </Pressable>
                 </>
@@ -677,11 +752,12 @@ export default function PlannerScreen() {
                 end={{ x: 1, y: 1 }}
                 style={styles.primaryButtonGradient}>
                 <Pressable style={styles.primaryButton} onPress={addTaskFromDraft}>
-                  <Ionicons name="add" size={18} color={theme.colors.actionForeground} />
+                  <Ionicons name="add" size={20} color={theme.colors.actionForeground} />
                   <Text style={styles.primaryButtonText}>Create Task</Text>
                 </Pressable>
               </LinearGradient>
             </View>
+            )}
           </View>
         }
         keyboardShouldPersistTaps="handled"
@@ -691,7 +767,7 @@ export default function PlannerScreen() {
         }}
         renderItem={({ item, index }) => {
           const taskProgress = getUserTaskProgress(item, activeUserId);
-          const isCompleted = taskProgress.completed;
+          const isCompleted = isTaskCompletedForActiveUser(item);
           const total = item.subtasks.length;
           const done = item.subtasks.filter((subtask) => taskProgress.subtasks[subtask.id] === true).length;
           const progress = total === 0 ? 0 : Math.round((done / total) * 100);
@@ -704,9 +780,9 @@ export default function PlannerScreen() {
             item.appName,
             item.appPackageName
           );
-          const statusLabel = isCompleted ? 'Completed' : item.isDaily ? 'Daily' : 'In progress';
           const deadlineLabel = item.endDate ? `Deadline ${item.endDate}` : 'No deadline';
-          const isOverdue = !item.isDaily && Boolean(item.endDate) && !isCompleted && item.endDate < getLocalIsoDate();
+          const isOverdue = Boolean(item.endDate) && !isCompleted && item.endDate < getLocalIsoDate();
+          const statusLabel = isCompleted ? 'Completed' : isOverdue ? 'Failed' : item.isDaily ? 'Daily' : 'In progress';
           const creatorName = userById[item.createdByUserId] ?? 'Unknown user';
           const deadlineByName = userById[item.deadlineByUserId] ?? creatorName;
           const includedUsers = item.participantUserIds
@@ -717,9 +793,12 @@ export default function PlannerScreen() {
             .filter((name): name is string => Boolean(name));
 
           return (
-            <View style={[styles.taskCard, isOverdue && styles.taskCardOverdue]}>
+            <View style={[
+              styles.taskCard,
+              isCompleted ? styles.taskCardComplete : isOverdue && styles.taskCardOverdue,
+            ]}>
               <View style={styles.taskTopRow}>
-                <Pressable style={styles.taskTitleRow} onPress={() => toggleTask(item.id)}>
+                <Pressable style={styles.taskTitleRow} onPress={() => toggleTaskWithFeedback(item.id)}>
                   <Ionicons
                     name={isCompleted ? 'checkmark-circle' : 'ellipse-outline'}
                     size={24}
@@ -728,7 +807,7 @@ export default function PlannerScreen() {
                   <View style={styles.taskTextWrap}>
                     <Text style={[styles.taskTitle, isCompleted && styles.completedText]}>{item.title}</Text>
                     <Text style={styles.taskMeta}>
-                      {item.isDaily ? `Daily at ${formatTime(item.dailyTime, language)} · ` : ''}Subtasks done: {done}/{total}
+                      {item.isDaily ? `Daily at ${formatTime(item.dailyTime, language, preferences.timeFormat)} · ` : ''}Subtasks done: {done}/{total}
                     </Text>
                     {item.appName ? <Text style={styles.taskOwnerText}>App: {item.appName}</Text> : null}
                     <Text style={styles.taskOwnerText}>Created by {creatorName}</Text>
@@ -748,7 +827,7 @@ export default function PlannerScreen() {
                       </View>
                       {isOverdue ? (
                         <View style={[styles.badge, styles.badgeOverdue]}>
-                          <Text style={[styles.badgeText, styles.badgeTextOverdue]}>Overdue</Text>
+                          <Text style={[styles.badgeText, styles.badgeTextOverdue]}>Failed</Text>
                         </View>
                       ) : null}
                     </View>
@@ -767,7 +846,7 @@ export default function PlannerScreen() {
                     accessibilityRole="button"
                     accessibilityLabel={`Delete ${item.title}`}
                     style={styles.iconButton}
-                    onPress={() => removeTask(item.id)}>
+                    onPress={() => confirmRemoveTask(item.id, item.title)}>
                     <Ionicons name="trash-outline" size={18} color={theme.colors.accent} />
                   </Pressable>
                 </View>
@@ -843,7 +922,7 @@ export default function PlannerScreen() {
                   </Pressable>
                   <Pressable style={styles.dailyTimeButtonTask} onPress={() => openTimePicker({ scope: 'milestone', taskId: item.id })}>
                     <Ionicons name="time-outline" size={16} color={theme.colors.buttonDark} />
-                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(milestone.dailyTime, language)}</Text>
+                    <Text style={styles.dailyTimeButtonText}>Every day at {formatTime(milestone.dailyTime, language, preferences.timeFormat)}</Text>
                     <Ionicons name="chevron-forward" size={15} color={theme.colors.textSecondary} />
                   </Pressable>
                 </>
@@ -860,7 +939,7 @@ export default function PlannerScreen() {
                   placeholderTextColor={theme.colors.textSecondary}
                   value={subtaskDrafts[item.id] ?? ''}
                   onChangeText={(text) => setSubtaskDraft(item.id, text)}
-                  onFocus={() => focusSubtaskInput(index)}
+                  onFocus={(event) => focusPlannerInput(event.nativeEvent.target)}
                   onSubmitEditing={() => addSubtaskFromDraft(item.id)}
                   returnKeyType="done"
                   blurOnSubmit={false}
@@ -883,7 +962,7 @@ export default function PlannerScreen() {
                         style={styles.subtaskEditInput}
                         value={subtaskEditDraft}
                         onChangeText={setSubtaskEditDraft}
-                        onFocus={() => focusSubtaskInput(index)}
+                        onFocus={(event) => focusPlannerInput(event.nativeEvent.target)}
                         onSubmitEditing={() => saveSubtaskTitle(item.id)}
                         returnKeyType="done"
                         autoFocus
@@ -905,7 +984,7 @@ export default function PlannerScreen() {
                     </>
                   ) : (
                     <>
-                      <Pressable style={styles.subtaskLeft} onPress={() => toggleSubtask(item.id, subtask.id)}>
+                      <Pressable style={styles.subtaskLeft} onPress={() => toggleSubtaskWithFeedback(item.id, subtask.id)}>
                         <Ionicons
                           name={taskProgress.subtasks[subtask.id] ? 'checkbox' : 'square-outline'}
                           size={18}
@@ -934,7 +1013,11 @@ export default function PlannerScreen() {
             </View>
           );
         }}
-        ListEmptyComponent={<Text style={styles.emptyState}>No tasks yet. Start with one big goal above.</Text>}
+        ListEmptyComponent={
+          <Text style={styles.emptyState}>
+            {showHistory ? 'No tasks in history yet.' : 'No tasks yet. Start with one big goal above.'}
+          </Text>
+        }
       />
 
       <Modal
@@ -1089,7 +1172,12 @@ export default function PlannerScreen() {
             </View>
 
             <View style={styles.datePickerWeekdays}>
-              {(language === 'id' ? ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S']).map((day, index) => (
+              {(language === 'id' ? ['Min', 'Sen', 'Sel', 'Rab', 'Kam', 'Jum', 'Sab'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S'])
+                .slice(preferences.weekStartsOn === 'monday' ? 1 : 0)
+                .concat(preferences.weekStartsOn === 'monday'
+                  ? (language === 'id' ? ['Min'] : ['S'])
+                  : [])
+                .map((day, index) => (
                 <Text key={`${day}-${index}`} style={styles.datePickerWeekday}>{day}</Text>
               ))}
             </View>
@@ -1952,6 +2040,10 @@ const baseStyles = StyleSheet.create({
     backgroundColor: 'rgba(220, 38, 38, 0.08)',
     borderColor: 'rgba(220, 38, 38, 0.28)',
   },
+  taskCardComplete: {
+    backgroundColor: '#EFF8F4',
+    borderColor: '#CDE8DA',
+  },
   taskTopRow: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -2333,6 +2425,32 @@ const baseStyles = StyleSheet.create({
     textAlign: 'center',
     color: theme.colors.textSecondary,
     fontFamily: 'Nunito_600SemiBold',
+  },
+  taskViewTabs: {
+    flexDirection: 'row',
+    marginTop: 14,
+    padding: 4,
+    gap: 4,
+    borderRadius: theme.borderRadius.md,
+    backgroundColor: theme.colors.border,
+  },
+  taskViewTab: {
+    flex: 1,
+    minHeight: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: theme.borderRadius.sm,
+  },
+  taskViewTabActive: {
+    backgroundColor: theme.colors.cardBackground,
+  },
+  taskViewTabText: {
+    color: theme.colors.textSecondary,
+    fontFamily: 'Nunito_700Bold',
+    fontSize: 13,
+  },
+  taskViewTabTextActive: {
+    color: theme.colors.buttonDark,
   },
   periodRow: {
     flexDirection: 'row',
